@@ -148,7 +148,8 @@ export default class AppContext implements IAppContext {
     );
     this.tshdNotificationsService = new TshdNotificationsService(
       this.notificationsService,
-      this.clustersService
+      this.clustersService,
+      this.workspacesService
     );
     this.connectMyComputerService = new ConnectMyComputerService(
       this.mainProcessClient,

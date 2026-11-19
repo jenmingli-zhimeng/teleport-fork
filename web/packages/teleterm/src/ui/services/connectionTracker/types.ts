@@ -39,7 +39,7 @@ export interface TrackedServerConnection extends TrackedConnectionBase {
 
 export interface TrackedGatewayConnection extends TrackedConnectionBase {
   kind: 'connection.gateway';
-  targetUri: DatabaseUri | AppUri;
+  targetUri: DatabaseUri | AppUri | ServerUri;
   targetName: string;
   targetUser?: string;
   port?: string;

@@ -21,10 +21,11 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import {
   makeDatabaseGateway,
   makeRootCluster,
+  makeSSHGateway,
 } from 'teleterm/services/tshd/testHelpers';
 import { MockAppContext } from 'teleterm/ui/fixtures/mocks';
 import { DocumentGateway } from 'teleterm/ui/services/workspacesService';
-import { DatabaseUri } from 'teleterm/ui/uri';
+import { DatabaseUri, ServerUri } from 'teleterm/ui/uri';
 
 import { WorkspaceContextProvider } from '../Documents';
 import { MockAppContextProvider } from '../fixtures/MockAppContextProvider';
@@ -110,6 +111,40 @@ it('does not attempt to create a gateway immediately after closing it if the gat
   expect(appContext.clustersService.createGateway).not.toHaveBeenCalled();
 });
 
+it('appends the idle marker for SSH one-click forwards', async () => {
+  const { appContext, gateway, doc, $wrapper } = sshTestSetup();
+
+  jest
+    .spyOn(appContext.clustersService, 'createGateway')
+    .mockImplementation(async () => {
+      appContext.clustersService.setState(draftState => {
+        draftState.gateways.set(gateway.uri, gateway);
+      });
+      return gateway;
+    });
+  jest.spyOn(window, 'open').mockImplementation();
+
+  const { result } = renderHook(() => useGateway(doc), {
+    wrapper: $wrapper,
+  });
+
+  await waitFor(() =>
+    expect(result.current.connectAttempt.status).toBe('success')
+  );
+
+  expect(appContext.clustersService.createGateway).toHaveBeenCalledWith({
+    targetUri: doc.targetUri,
+    targetSubresourceName: 'localhost:80#idle',
+    targetUser: doc.targetUser,
+    localPort: doc.port,
+  });
+  expect(window.open).toHaveBeenCalledWith(
+    'http://127.0.0.1:1337',
+    '_blank',
+    'noreferrer,noopener'
+  );
+});
+
 const testSetup = () => {
   const appContext = new MockAppContext();
   const cluster = makeRootCluster({ connected: true });
@@ -125,6 +160,44 @@ const testSetup = () => {
     origin: 'resource_table',
     title: '',
     status: '',
+  };
+  appContext.addRootClusterWithDoc(cluster, doc);
+  const workspaceContext = {
+    rootClusterUri: cluster.uri,
+    localClusterUri: cluster.uri,
+    documentsService: appContext.workspacesService.getWorkspaceDocumentService(
+      cluster.uri
+    ),
+    accessRequestsService: undefined,
+  };
+  const $wrapper = ({ children }) => (
+    <MockAppContextProvider appContext={appContext}>
+      <WorkspaceContextProvider value={workspaceContext}>
+        {children}
+      </WorkspaceContextProvider>
+    </MockAppContextProvider>
+  );
+
+  return { gateway, doc, appContext, workspaceContext, $wrapper };
+};
+
+const sshTestSetup = () => {
+  const appContext = new MockAppContext();
+  const cluster = makeRootCluster({ connected: true });
+  const gateway = makeSSHGateway();
+  const doc: DocumentGateway = {
+    uri: '/docs/1',
+    kind: 'doc.gateway',
+    targetName: gateway.targetName,
+    targetUri: gateway.targetUri as ServerUri,
+    targetUser: gateway.targetUser,
+    targetSubresourceName: gateway.targetSubresourceName,
+    gatewayUri: gateway.uri,
+    origin: 'resource_table',
+    title: '',
+    status: '',
+    sshIdleTimeout: true,
+    sshOpenInBrowser: true,
   };
   appContext.addRootClusterWithDoc(cluster, doc);
   const workspaceContext = {

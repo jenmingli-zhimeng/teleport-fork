@@ -83,6 +83,13 @@ function isUrlSafe(
   clusterStore: Pick<ClusterStore, 'getRootClusters'>,
   logger: Logger
 ): boolean {
+  // SSH local port forwards listen on loopback and are opened in the system
+  // browser. Allow only http(s) to localhost / 127.0.0.1 / ::1 so this does not
+  // weaken the HTTPS allowlist below.
+  if (isLoopbackWebUrl(url)) {
+    return true;
+  }
+
   if (url.protocol !== 'https:') {
     return false;
   }
@@ -120,6 +127,21 @@ function isUrlSafe(
   if (isAwsIc || isAwsIcUsGov) {
     return true;
   }
+
+  return false;
+}
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+
+function isLoopbackWebUrl(url: URL): boolean {
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return false;
+  }
+  if (url.username || url.password) {
+    return false;
+  }
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  return LOOPBACK_HOSTS.has(hostname);
 }
 
 /**

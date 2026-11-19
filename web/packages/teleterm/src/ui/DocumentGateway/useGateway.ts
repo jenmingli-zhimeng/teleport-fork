@@ -21,6 +21,11 @@ import { useCallback, useEffect } from 'react';
 import { Gateway } from 'gen-proto-ts/teleport/lib/teleterm/v1/gateway_pb';
 import { useAsync } from 'shared/hooks/useAsync';
 
+import {
+  formatSSHForwardTarget,
+  openSSHForwardInBrowser,
+  parseSSHForwardTarget,
+} from 'teleterm/services/tshd/sshGateway';
 import { useAppContext } from 'teleterm/ui/appContextProvider';
 import { useWorkspaceContext } from 'teleterm/ui/Documents';
 import { useStoreSelector } from 'teleterm/ui/hooks/useStoreSelector';
@@ -28,7 +33,7 @@ import {
   DocumentGateway,
   getDocumentGatewayTitle,
 } from 'teleterm/ui/services/workspacesService';
-import { isAppUri, isDatabaseUri } from 'teleterm/ui/uri';
+import { isAppUri, isDatabaseUri, isServerUri } from 'teleterm/ui/uri';
 import { retryWithRelogin } from 'teleterm/ui/utils';
 
 export function useGateway(doc: DocumentGateway) {
@@ -61,8 +66,10 @@ export function useGateway(doc: DocumentGateway) {
               targetUri: doc.targetUri,
               localPort: args.localPort,
               targetUser: doc.targetUser,
-              targetSubresourceName:
-                args.targetSubresourceName || doc.targetSubresourceName,
+              targetSubresourceName: resolveTargetSubresourceName(
+                doc,
+                args.targetSubresourceName
+              ),
             })
           );
         } catch (error) {
@@ -101,6 +108,14 @@ export function useGateway(doc: DocumentGateway) {
           usageService.captureProtocolUse({
             uri: doc.targetUri,
             protocol: 'app',
+            origin: doc.origin,
+            accessThrough: 'local_proxy',
+          });
+        }
+        if (isServerUri(doc.targetUri)) {
+          usageService.captureProtocolUse({
+            uri: doc.targetUri,
+            protocol: 'ssh',
             origin: doc.origin,
             accessThrough: 'local_proxy',
           });
@@ -171,6 +186,17 @@ export function useGateway(doc: DocumentGateway) {
     }
   }, []);
 
+  useEffect(
+    function openSSHForwardInBrowserOnce() {
+      if (!gateway || !doc.sshOpenInBrowser) {
+        return;
+      }
+      openSSHForwardInBrowser(gateway);
+      documentsService.update(doc.uri, { sshOpenInBrowser: false });
+    },
+    [gateway, doc.sshOpenInBrowser, doc.uri, documentsService]
+  );
+
   return {
     gateway,
     defaultPort,
@@ -184,4 +210,16 @@ export function useGateway(doc: DocumentGateway) {
     changePort,
     changePortAttempt,
   };
+}
+
+function resolveTargetSubresourceName(
+  doc: DocumentGateway,
+  override?: string
+): string | undefined {
+  const raw = override || doc.targetSubresourceName;
+  if (!doc.sshIdleTimeout) {
+    return raw;
+  }
+  const parsed = parseSSHForwardTarget(raw);
+  return formatSSHForwardTarget(parsed.host, parsed.port, true);
 }

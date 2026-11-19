@@ -49,6 +49,10 @@ func New(cfg Config) (Gateway, error) {
 		gateway, err := makeAppGateway(cfg)
 		return gateway, trace.Wrap(err)
 
+	case cfg.TargetURI.IsServer():
+		gateway, err := makeSSHGateway(cfg)
+		return gateway, trace.Wrap(err)
+
 	default:
 		return nil, trace.NotImplemented("gateway not supported for %v", cfg.TargetURI)
 	}
@@ -74,7 +78,21 @@ func NewWithLocalPort(gateway Gateway, port string) (Gateway, error) {
 	cfg.LocalPort = port
 
 	newGateway, err := New(cfg)
-	return newGateway, trace.Wrap(err)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	// Transfer ownership of the SSH node client from the old gateway to the new
+	// one so that closing the old listener does not tear down the SSH session.
+	if releaser, ok := gateway.(sshNodeClientReleaser); ok {
+		releaser.releaseSSHNodeClient()
+	}
+
+	return newGateway, nil
+}
+
+type sshNodeClientReleaser interface {
+	releaseSSHNodeClient()
 }
 
 func newBase(cfg Config) (*base, error) {

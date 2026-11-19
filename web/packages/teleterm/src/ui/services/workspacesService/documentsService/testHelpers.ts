@@ -21,6 +21,7 @@ import {
   makeDatabaseGateway,
   makeKubeGateway,
   makeServer,
+  makeSSHGateway,
   rootClusterUri,
   windowsDesktopUri,
 } from 'teleterm/services/tshd/testHelpers';
@@ -86,6 +87,27 @@ export function makeDocumentGatewayApp(
     status: '',
     targetSubresourceName: gw.targetSubresourceName,
     origin: 'connection_list',
+    ...props,
+  };
+}
+
+export function makeDocumentGatewaySSH(
+  props?: Partial<types.DocumentGateway>
+): types.DocumentGateway {
+  const gw = makeSSHGateway();
+  return {
+    kind: 'doc.gateway',
+    uri: '/docs/gateway_ssh',
+    title: 'ec2-user@foo (localhost:80)',
+    targetUri: gw.targetUri,
+    gatewayUri: gw.uri,
+    port: gw.localPort,
+    targetName: gw.targetName,
+    targetUser: gw.targetUser,
+    status: '',
+    targetSubresourceName: gw.targetSubresourceName,
+    origin: 'connection_list',
+    targetProtocol: gw.protocol,
     ...props,
   };
 }

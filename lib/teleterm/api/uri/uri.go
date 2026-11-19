@@ -312,3 +312,8 @@ func (r ResourceURI) IsApp() bool {
 func (r ResourceURI) IsWindowsDesktop() bool {
 	return r.GetWindowsDesktopName() != ""
 }
+
+// IsServer returns true if URI is an SSH server resource.
+func (r ResourceURI) IsServer() bool {
+	return r.GetServerUUID() != ""
+}

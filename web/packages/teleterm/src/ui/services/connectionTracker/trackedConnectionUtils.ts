@@ -71,6 +71,13 @@ export function getGatewayConnectionByDocument(
         c.targetUri === document.targetUri &&
         c.targetSubresourceName === document.targetSubresourceName;
     }
+    case 'ssh': {
+      return c =>
+        c.kind === 'connection.gateway' &&
+        c.targetUri === document.targetUri &&
+        c.targetUser === document.targetUser &&
+        c.targetSubresourceName === document.targetSubresourceName;
+    }
     default: {
       targetKind satisfies never;
     }
@@ -146,6 +153,13 @@ export function getGatewayDocumentByConnection(
       return d =>
         d.kind === 'doc.gateway' &&
         d.targetUri === connection.targetUri &&
+        d.targetSubresourceName === connection.targetSubresourceName;
+    }
+    case 'ssh': {
+      return d =>
+        d.kind === 'doc.gateway' &&
+        d.targetUri === connection.targetUri &&
+        d.targetUser === connection.targetUser &&
         d.targetSubresourceName === connection.targetSubresourceName;
     }
     default: {

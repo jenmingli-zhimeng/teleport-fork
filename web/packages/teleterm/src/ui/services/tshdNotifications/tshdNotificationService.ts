@@ -27,6 +27,10 @@ import {
   publicAddrWithTargetPort,
 } from 'teleterm/services/tshd/app';
 import { getTargetNameFromUri } from 'teleterm/services/tshd/gateway';
+import {
+  isSSHGatewayClosedError,
+  SSH_IDLE_TIMEOUT_ERROR,
+} from 'teleterm/services/tshd/sshGateway';
 import { SendNotificationRequest } from 'teleterm/services/tshdEvents';
 import { ClustersService } from 'teleterm/ui/services/clusters';
 import {
@@ -34,17 +38,78 @@ import {
   NotificationKey,
   NotificationsService,
 } from 'teleterm/ui/services/notifications';
-import { ResourceUri, routing } from 'teleterm/ui/uri';
+import type { WorkspacesService } from 'teleterm/ui/services/workspacesService/workspacesService';
+import {
+  GatewayUri,
+  ResourceUri,
+  RootClusterUri,
+  routing,
+} from 'teleterm/ui/uri';
 
 export class TshdNotificationsService {
   constructor(
     private notificationsService: NotificationsService,
-    private clustersService: ClustersService
+    private clustersService: ClustersService,
+    private workspacesService: WorkspacesService
   ) {}
 
   sendNotification(request: SendNotificationRequest) {
+    if (this.handleSSHIdleClosed(request)) {
+      return;
+    }
     const notificationContent = this.getNotificationContent(request);
     this.notificationsService.notifyError(notificationContent);
+  }
+
+  /**
+   * tshd reports SSH gateway teardown through CannotProxyGatewayConnection
+   * with a sentinel error. The gateway is already gone on the daemon side;
+   * drop stale UI state so Close Connection / new forwards keep working.
+   */
+  private handleSSHIdleClosed(request: SendNotificationRequest): boolean {
+    const { subject } = request;
+    if (
+      !notificationRequestOneOfIsCannotProxyGatewayConnection(subject) ||
+      !isSSHGatewayClosedError(subject.cannotProxyGatewayConnection.error)
+    ) {
+      return false;
+    }
+
+    const { gatewayUri, targetUri, error } =
+      subject.cannotProxyGatewayConnection;
+    const gateway = this.clustersService.findGateway(gatewayUri);
+    const targetName = gateway?.targetName || getTargetNameFromUri(targetUri);
+    const remote = gateway?.targetSubresourceName;
+    this.clustersService.removeGatewayFromState(gatewayUri as GatewayUri);
+    this.closeGatewayDocuments(gatewayUri);
+
+    const desc = remote ? `${targetName} (${remote})` : targetName;
+    const idle = error === SSH_IDLE_TIMEOUT_ERROR;
+    this.notificationsService.notifyInfo({
+      title: 'SSH port forward closed',
+      description: idle
+        ? `The local forward to ${desc} was closed after 15 minutes of inactivity.`
+        : `The local forward to ${desc} was closed because the SSH session ended.`,
+      key: ['sshGatewayIdleClosed', routing.ensureRootClusterUri(targetUri)],
+    });
+    return true;
+  }
+
+  private closeGatewayDocuments(gatewayUri: string) {
+    for (const rootClusterUri of Object.keys(
+      this.workspacesService.getWorkspaces()
+    ) as RootClusterUri[]) {
+      const documentsService =
+        this.workspacesService.getWorkspaceDocumentService(rootClusterUri);
+      if (!documentsService) {
+        continue;
+      }
+      for (const doc of [...documentsService.getDocuments()]) {
+        if (doc.kind === 'doc.gateway' && doc.gatewayUri === gatewayUri) {
+          documentsService.close(doc.uri);
+        }
+      }
+    }
   }
 
   // All returned notification contents should include a key that limits the notification to a

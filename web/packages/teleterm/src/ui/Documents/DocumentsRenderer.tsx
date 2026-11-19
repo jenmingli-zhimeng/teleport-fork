@@ -42,6 +42,7 @@ import { DocumentGateway } from 'teleterm/ui/DocumentGateway';
 import { DocumentGatewayApp } from 'teleterm/ui/DocumentGatewayApp';
 import { DocumentGatewayCliClient } from 'teleterm/ui/DocumentGatewayCliClient';
 import { DocumentGatewayKube } from 'teleterm/ui/DocumentGatewayKube';
+import { DocumentGatewaySSH } from 'teleterm/ui/DocumentGatewaySSH';
 import { DocumentTerminal } from 'teleterm/ui/DocumentTerminal';
 import { useStoreSelector } from 'teleterm/ui/hooks/useStoreSelector';
 import * as types from 'teleterm/ui/services/workspacesService';
@@ -49,7 +50,12 @@ import {
   DocumentsService,
   Workspace,
 } from 'teleterm/ui/services/workspacesService';
-import { isAppUri, isDatabaseUri, RootClusterUri } from 'teleterm/ui/uri';
+import {
+  isAppUri,
+  isDatabaseUri,
+  isServerUri,
+  RootClusterUri,
+} from 'teleterm/ui/uri';
 import { DocumentVnetDiagReport } from 'teleterm/ui/Vnet/DocumentVnetDiagReport';
 import { DocumentVnetInfo } from 'teleterm/ui/Vnet/DocumentVnetInfo';
 
@@ -171,12 +177,15 @@ function MemoizedDocument(props: {
         if (isAppUri(doc.targetUri)) {
           return <DocumentGatewayApp doc={doc} visible={visible} />;
         }
+        if (isServerUri(doc.targetUri)) {
+          return <DocumentGatewaySSH doc={doc} visible={visible} />;
+        }
         return (
           <Document visible={visible}>
             <Text m="auto" mt={10} textAlign="center">
               Cannot create a gateway for the target "{doc.targetUri}".
               <br />
-              Only database, kube, and app targets are supported.
+              Only database, kube, app, and SSH targets are supported.
             </Text>
           </Document>
         );

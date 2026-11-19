@@ -170,6 +170,25 @@ test('remove a gateway', async () => {
   expect(service.findGateway(gatewayUri)).toBeUndefined();
 });
 
+test('remove a gateway that tshd has already torn down', async () => {
+  const error = Object.assign(
+    new Error(`gateway is not found: ${gatewayMock.uri}`),
+    { name: 'RpcError', code: 'NOT_FOUND' }
+  );
+  const removeGateway = jest
+    .fn()
+    .mockReturnValueOnce(new MockedUnaryCall(undefined, error));
+  const service = createService({ removeGateway });
+  service.setState(draftState => {
+    draftState.gateways = new Map([[gatewayMock.uri, gatewayMock]]);
+  });
+
+  await service.removeGateway(gatewayMock.uri);
+
+  expect(removeGateway).toHaveBeenCalledWith({ gatewayUri: gatewayMock.uri });
+  expect(service.findGateway(gatewayMock.uri)).toBeUndefined();
+});
+
 test('remove a kube gateway', async () => {
   const { removeGateway } = getClientMocks();
   const service = createService({

@@ -19,7 +19,6 @@
 package clusters
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -92,6 +91,10 @@ func (c *Cluster) Logout(ctx context.Context) error {
 func (c *Cluster) LocalLogin(ctx context.Context, user, password, otpToken string) error {
 	c.clusterClient.AuthConnector = constants.LocalConnector
 
+	if _, err := c.updateClientFromPingResponse(ctx); err != nil {
+		return trace.Wrap(err)
+	}
+
 	if err := c.login(ctx, c.localMFALogin(user, password)); err != nil {
 		return trace.Wrap(err)
 	}
@@ -137,8 +140,6 @@ func (c *Cluster) updateClientFromPingResponse(ctx context.Context) (*webclient.
 		return nil, trace.Wrap(err)
 	}
 
-	c.clusterClient.KeyTTL = cmp.Or(c.clusterClient.KeyTTL, pingResp.Auth.DefaultSessionTTL.Duration(), defaults.CertDuration)
-
 	return pingResp, nil
 }
 
@@ -148,6 +149,9 @@ func (c *Cluster) login(ctx context.Context, sshLoginFunc client.SSHLoginFunc) e
 	// TODO(alex-kovoy): SiteName needs to be reset if trying to login to a cluster with
 	// existing profile for the first time (investigate why)
 	c.clusterClient.SiteName = ""
+	// Request the longest session the auth server will grant. The cluster still
+	// caps this with role max_session_ttl (and MaxCertDuration itself).
+	c.clusterClient.KeyTTL = defaults.MaxCertDuration
 
 	key, err := c.clusterClient.SSHLogin(ctx, sshLoginFunc)
 	if err != nil {

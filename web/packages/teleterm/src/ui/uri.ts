@@ -75,7 +75,7 @@ export type WindowsDesktopUri =
   | RootClusterWindowsDesktopUri
   | LeafClusterWindowsDesktopUri;
 export type ClusterOrResourceUri = ResourceUri | ClusterUri;
-export type GatewayTargetUri = DatabaseUri | KubeUri | AppUri;
+export type GatewayTargetUri = DatabaseUri | KubeUri | AppUri | ServerUri;
 
 /** General type for desktop URI. */
 export type DesktopUri = WindowsDesktopUri;

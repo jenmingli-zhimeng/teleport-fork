@@ -26,7 +26,7 @@ import { typography, TypographyProps } from 'design/system';
 import { useKeyboardArrowsNavigation } from 'teleterm/ui/components/KeyboardArrowsNavigation';
 import { ListItem } from 'teleterm/ui/components/ListItem';
 import { ExtendedTrackedConnection } from 'teleterm/ui/services/connectionTracker';
-import { isAppUri, isDatabaseUri } from 'teleterm/ui/uri';
+import { isAppUri, isDatabaseUri, isServerUri } from 'teleterm/ui/uri';
 
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator';
 
@@ -165,6 +165,9 @@ function getKindName(connection: ExtendedTrackedConnection): string {
       }
       if (isDatabaseUri(connection.targetUri)) {
         return 'DB';
+      }
+      if (isServerUri(connection.targetUri)) {
+        return 'FWD';
       }
       return 'UNKNOWN';
     case 'connection.server':

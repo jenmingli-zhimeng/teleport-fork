@@ -38,6 +38,7 @@ import {
   ClusterOrResourceUri,
   isAppUri,
   isDatabaseUri,
+  isServerUri,
   routing,
 } from 'teleterm/ui/uri';
 
@@ -94,13 +95,17 @@ export function getResourceUri(
  */
 export function getDocumentGatewayTargetUriKind(
   targetUri: DocumentGateway['targetUri']
-): 'db' | 'app' {
+): 'db' | 'app' | 'ssh' {
   if (isDatabaseUri(targetUri)) {
     return 'db';
   }
 
   if (isAppUri(targetUri)) {
     return 'app';
+  }
+
+  if (isServerUri(targetUri)) {
+    return 'ssh';
   }
 
   // TODO(ravicious): Optimally we'd use `targetUri satisfies never` here to have a type error when
@@ -122,6 +127,12 @@ export function getDocumentGatewayTitle(doc: DocumentGateway): string {
       return targetSubresourceName
         ? `${targetName}:${targetSubresourceName}`
         : targetName;
+    }
+    case 'ssh': {
+      const userHost = targetUser ? `${targetUser}@${targetName}` : targetName;
+      return targetSubresourceName
+        ? `${userHost} (${targetSubresourceName})`
+        : userHost;
     }
     default: {
       targetKind satisfies never;
@@ -161,6 +172,12 @@ export function getStaticNameAndIcon(
         return {
           name: document.title,
           Icon: Application,
+        };
+      }
+      if (isServerUri(document.targetUri)) {
+        return {
+          name: document.title,
+          Icon: Server,
         };
       }
       return;

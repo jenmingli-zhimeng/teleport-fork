@@ -143,6 +143,8 @@ export class DocumentsService {
       gatewayUri,
       origin,
       targetProtocol,
+      sshIdleTimeout,
+      sshOpenInBrowser,
     } = opts;
     const uri = routing.getDocUri({ docId: unique() });
 
@@ -160,6 +162,12 @@ export class DocumentsService {
       status: '',
       targetProtocol,
     };
+    if (sshIdleTimeout) {
+      doc.sshIdleTimeout = true;
+    }
+    if (sshOpenInBrowser) {
+      doc.sshOpenInBrowser = true;
+    }
     doc.title = getDocumentGatewayTitle(doc);
     return doc;
   }

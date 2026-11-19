@@ -22,9 +22,11 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"io"
 	"log/slog"
 	"net"
 	"runtime"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gravitational/trace"
@@ -36,6 +38,11 @@ import (
 	"github.com/gravitational/teleport/lib/teleterm/api/uri"
 	"github.com/gravitational/teleport/lib/tlsca"
 )
+
+// SSHDialer dials a remote address through an SSH tunnel.
+type SSHDialer interface {
+	DialContext(ctx context.Context, network, addr string) (net.Conn, error)
+}
 
 // Config describes gateway configuration
 type Config struct {
@@ -99,6 +106,14 @@ type Config struct {
 	// clear the cert from the local proxy and the middleware is going to request a new cert on the
 	// next connection.
 	ClearCertsOnTargetSubresourceNameChange bool
+	// SSHDialer dials the remote host:port through an established SSH connection.
+	// Required for SSH server gateways.
+	SSHDialer SSHDialer
+	// SSHCloser closes the underlying SSH client. Required for SSH server gateways.
+	SSHCloser io.Closer
+	// IdleTimeout, if greater than zero, closes the gateway after this duration
+	// with no active TCP connections. Used by one-click HTTP/HTTPS SSH forwards.
+	IdleTimeout time.Duration
 }
 
 // OnExpiredCertFunc is the type of a function that is called when a new downstream connection is
@@ -109,11 +124,32 @@ type OnExpiredCertFunc func(context.Context, Gateway) (tls.Certificate, error)
 
 // CheckAndSetDefaults checks and sets the defaults
 func (c *Config) CheckAndSetDefaults() error {
-	if !c.TargetURI.IsDB() && !c.TargetURI.IsKube() && !c.TargetURI.IsApp() {
+	isSSH := c.TargetURI.IsServer()
+	if !c.TargetURI.IsDB() && !c.TargetURI.IsKube() && !c.TargetURI.IsApp() && !isSSH {
 		return trace.BadParameter("unsupported gateway target %v", c.TargetURI)
 	}
 
-	if len(c.Cert.Certificate) == 0 {
+	if isSSH {
+		if c.SSHDialer == nil {
+			return trace.BadParameter("missing SSH dialer")
+		}
+		remoteAddr, idle, err := ParseSSHForwardTarget(c.TargetSubresourceName)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		c.TargetSubresourceName = remoteAddr
+		if idle && c.IdleTimeout == 0 {
+			c.IdleTimeout = SSHIdleTimeout
+		}
+		if c.Protocol == "" {
+			c.Protocol = ProtocolFromSSHRemoteAddr(remoteAddr)
+		}
+		if c.LocalAddress == "" {
+			// Bind IPv4 loopback. Listening on "localhost" can end up IPv6-only
+			// (common on Windows), which then fails when a browser opens 127.0.0.1.
+			c.LocalAddress = "127.0.0.1"
+		}
+	} else if len(c.Cert.Certificate) == 0 {
 		return trace.BadParameter("missing cert")
 	}
 
@@ -153,7 +189,7 @@ func (c *Config) CheckAndSetDefaults() error {
 		c.Clock = clockwork.NewRealClock()
 	}
 
-	if c.RootClusterCACertPoolFunc == nil {
+	if c.RootClusterCACertPoolFunc == nil && !isSSH {
 		if !c.Insecure {
 			return trace.BadParameter("missing RootClusterCACertPoolFunc")
 		}

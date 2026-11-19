@@ -101,7 +101,7 @@ require (
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.12.0
 	github.com/beevik/etree v1.6.0
 	github.com/buildkite/bintest/v3 v3.3.0
-	github.com/charlievieth/strcase v0.0.5
+	github.com/charlievieth/strcase v0.0.6
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.5
 	github.com/charmbracelet/huh v0.7.0

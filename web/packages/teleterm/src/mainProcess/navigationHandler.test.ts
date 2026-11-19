@@ -92,6 +92,31 @@ describe('opening links to', () => {
       url: 'https://start.us-gov-home.awsapps.com/directory/foo#/console?account_id=1234',
       allowed: true,
     },
+    {
+      name: 'loopback HTTP',
+      url: 'http://127.0.0.1:1337/',
+      allowed: true,
+    },
+    {
+      name: 'loopback localhost HTTP',
+      url: 'http://localhost:1337/',
+      allowed: true,
+    },
+    {
+      name: 'loopback HTTPS',
+      url: 'https://127.0.0.1:8443/',
+      allowed: true,
+    },
+    {
+      name: 'loopback IPv6 HTTP',
+      url: 'http://[::1]:1337/',
+      allowed: true,
+    },
+    {
+      name: 'loopback-looking non-local host',
+      url: 'http://127.0.0.1.example.com/',
+      allowed: false,
+    },
   ])('$name', test => {
     let handler: Parameters<WebContents['setWindowOpenHandler']>[0];
     registerNavigationHandlers(

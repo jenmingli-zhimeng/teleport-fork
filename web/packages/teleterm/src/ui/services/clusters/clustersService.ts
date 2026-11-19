@@ -30,7 +30,7 @@ import { AbortError, isAbortError } from 'shared/utils/error';
 
 import type { State as ClustersState } from 'teleterm/mainProcess/clusterStore';
 import { MainProcessClient } from 'teleterm/mainProcess/types';
-import { TshdClient } from 'teleterm/services/tshd';
+import { isTshdRpcError, TshdClient } from 'teleterm/services/tshd';
 import { getGatewayTargetUriKind } from 'teleterm/services/tshd/gateway';
 import { NotificationsService } from 'teleterm/ui/services/notifications';
 import { UsageService } from 'teleterm/ui/services/usage';
@@ -311,13 +311,29 @@ export class ClustersService extends ImmutableStore<ClustersServiceState> {
     return gateway;
   }
 
+  /**
+   * Drops a gateway from local state without calling tshd. Used when tshd has
+   * already closed the gateway, for example after an SSH idle timeout.
+   */
+  removeGatewayFromState(gatewayUri: uri.GatewayUri) {
+    this.setState(draft => {
+      draft.gateways.delete(gatewayUri);
+    });
+  }
+
   async removeGateway(gatewayUri: uri.GatewayUri) {
     try {
       await this.client.removeGateway({ gatewayUri });
-      this.setState(draft => {
-        draft.gateways.delete(gatewayUri);
-      });
+      this.removeGatewayFromState(gatewayUri);
     } catch (error) {
+      // tshd may have already torn the gateway down (idle timeout or a
+      // dropped SSH session). Treat that as a successful close so the UI
+      // can drop stale state and create a new forward.
+      if (isGatewayAlreadyGoneError(error)) {
+        this.removeGatewayFromState(gatewayUri);
+        return;
+      }
+
       const gateway = this.findGateway(gatewayUri);
       const gatewayDescription = gateway
         ? `for ${gateway.targetUser}@${gateway.targetName}`
@@ -432,6 +448,15 @@ export class ClustersService extends ImmutableStore<ClustersServiceState> {
           }
           break;
         }
+        case 'ssh': {
+          if (
+            gateway.targetUser === targetUser &&
+            gateway.targetSubresourceName === targetSubresourceName
+          ) {
+            return gateway;
+          }
+          break;
+        }
         default: {
           targetKind satisfies never;
         }
@@ -491,4 +516,20 @@ export class ClustersService extends ImmutableStore<ClustersServiceState> {
       });
     });
   }
+}
+
+function isGatewayAlreadyGoneError(error: unknown): boolean {
+  if (isTshdRpcError(error, 'NOT_FOUND')) {
+    return true;
+  }
+  const message =
+    error instanceof Error
+      ? error.message
+      : error &&
+          typeof error === 'object' &&
+          'message' in error &&
+          typeof error.message === 'string'
+        ? error.message
+        : '';
+  return message.includes('gateway is not found');
 }

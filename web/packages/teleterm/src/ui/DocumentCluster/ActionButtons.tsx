@@ -16,7 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 
 import {
   Box,
@@ -64,6 +64,7 @@ import {
   connectToDatabase,
   connectToKube,
   connectToServer,
+  connectToServerPortForward,
   connectToWindowsDesktop,
   setUpAppGateway,
 } from 'teleterm/ui/services/workspacesService';
@@ -71,6 +72,8 @@ import { IAppContext } from 'teleterm/ui/types';
 import { DatabaseUri, routing } from 'teleterm/ui/uri';
 import { retryWithRelogin } from 'teleterm/ui/utils';
 import { useVnetContext, useVnetLauncher } from 'teleterm/ui/Vnet';
+
+import { ForwardPortDialog, ForwardPortDialogMode } from './ForwardPortDialog';
 
 /**
  * Width that should be consistent across all displayed buttons.
@@ -86,6 +89,7 @@ export function ConnectServerActionButton(props: {
   const ctx = useAppContext();
   const { isSupported: isVnetSupported } = useVnetContext();
   const { launchVnet } = useVnetLauncher();
+  const [forwardMode, setForwardMode] = useState<ForwardPortDialogMode>();
 
   function connectWithVnet(): void {
     const hostname = props.server.hostname;
@@ -109,6 +113,54 @@ export function ConnectServerActionButton(props: {
     );
   }
 
+  function openPortForward(opts: {
+    login: string;
+    remoteHost: string;
+    remotePort: string;
+    localPort?: string;
+    idleTimeout?: boolean;
+    openInBrowser?: boolean;
+    targetProtocol?: string;
+  }): void {
+    void connectToServerPortForward(
+      ctx,
+      {
+        uri: props.server.uri,
+        hostname: props.server.hostname,
+        login: opts.login,
+      },
+      {
+        telemetry: { origin: 'resource_table' },
+        remoteAddr: `${opts.remoteHost}:${opts.remotePort}`,
+        localPort: opts.localPort,
+        idleTimeout: opts.idleTimeout,
+        openInBrowser: opts.openInBrowser,
+        targetProtocol: opts.targetProtocol,
+      }
+    );
+  }
+
+  function openOneClickForward(mode: 'http' | 'https', login?: string): void {
+    const remotePort = mode === 'https' ? '443' : '80';
+    const targetProtocol = mode === 'https' ? 'HTTPS' : 'HTTP';
+    if (login) {
+      openPortForward({
+        login,
+        remoteHost: '127.0.0.1',
+        remotePort,
+        idleTimeout: true,
+        openInBrowser: true,
+        targetProtocol,
+      });
+      return;
+    }
+    if (props.server.logins.length === 1) {
+      openOneClickForward(mode, props.server.logins[0]);
+      return;
+    }
+    setForwardMode(mode);
+  }
+
   const commonProps: MenuLoginProps = {
     inputType: MenuInputType.FILTER,
     textTransform: 'none',
@@ -124,15 +176,56 @@ export function ConnectServerActionButton(props: {
     },
   };
 
-  if (!isVnetSupported) {
-    return (
-      <MenuLogin {...commonProps} width={buttonWidth} alignButtonWidthToMenu />
-    );
-  }
   return (
-    <MenuLoginWithActionMenu size="small" {...commonProps} width={buttonWidth}>
-      <MenuItem onClick={connectWithVnet}>Connect with VNet</MenuItem>
-    </MenuLoginWithActionMenu>
+    <>
+      <MenuLoginWithActionMenu
+        size="small"
+        {...commonProps}
+        width={buttonWidth}
+      >
+        {[
+          <MenuItem key="http" onClick={() => openOneClickForward('http')}>
+            Open HTTP (80)
+          </MenuItem>,
+          <MenuItem key="https" onClick={() => openOneClickForward('https')}>
+            Open HTTPS (443)
+          </MenuItem>,
+          <MenuItem key="fwd" onClick={() => setForwardMode('manual')}>
+            Forward port…
+          </MenuItem>,
+          ...(isVnetSupported
+            ? [
+                <MenuItem key="vnet" onClick={connectWithVnet}>
+                  Connect with VNet
+                </MenuItem>,
+              ]
+            : []),
+        ]}
+      </MenuLoginWithActionMenu>
+      {forwardMode && (
+        <ForwardPortDialog
+          hostname={props.server.hostname}
+          logins={props.server.logins}
+          mode={forwardMode}
+          onCancel={() => setForwardMode(undefined)}
+          onConfirm={result => {
+            const idleTimeout = forwardMode !== 'manual';
+            openPortForward({
+              ...result,
+              idleTimeout,
+              openInBrowser: idleTimeout,
+              targetProtocol:
+                forwardMode === 'https'
+                  ? 'HTTPS'
+                  : forwardMode === 'http'
+                    ? 'HTTP'
+                    : undefined,
+            });
+            setForwardMode(undefined);
+          }}
+        />
+      )}
+    </>
   );
 }
 

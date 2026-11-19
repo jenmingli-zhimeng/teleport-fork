@@ -311,6 +311,26 @@ export const makeKubeGateway = (
   ...props,
 });
 
+export const makeSSHGateway = (
+  props: Partial<tsh.Gateway> = {}
+): tsh.Gateway => ({
+  uri: '/gateways/ssh',
+  targetName: 'foo',
+  targetUri: `${rootClusterUri}/servers/1234abcd-1234-abcd-1234-abcd1234abcd`,
+  targetUser: 'ec2-user',
+  localAddress: '127.0.0.1',
+  localPort: '1337',
+  protocol: 'HTTP',
+  gatewayCliCommand: {
+    path: '',
+    args: [],
+    env: [],
+    preview: 'curl http://127.0.0.1:1337',
+  },
+  targetSubresourceName: 'localhost:80',
+  ...props,
+});
+
 export const makeAppGateway = (
   props: Partial<tsh.Gateway> = {}
 ): tsh.Gateway => ({

@@ -21,6 +21,7 @@ package daemon
 import (
 	"cmp"
 	"context"
+	"crypto/tls"
 	"errors"
 	"log/slog"
 	"net"
@@ -84,7 +85,7 @@ func (m *mockGatewayCreator) CreateGateway(ctx context.Context, params clusters.
 		LocalPort:             params.LocalPort,
 		TargetURI:             params.TargetURI,
 		TargetUser:            params.TargetUser,
-		TargetName:            cmp.Or(targetURI.GetDbName(), targetURI.GetKubeName(), targetURI.GetAppName()),
+		TargetName:            cmp.Or(targetURI.GetDbName(), targetURI.GetKubeName(), targetURI.GetAppName(), targetURI.GetServerUUID()),
 		TargetSubresourceName: params.TargetSubresourceName,
 		Protocol:              defaults.ProtocolPostgres,
 		Insecure:              true,
@@ -92,6 +93,13 @@ func (m *mockGatewayCreator) CreateGateway(ctx context.Context, params clusters.
 		TCPPortAllocator:      m.tcpPortAllocator,
 		KubeconfigsDir:        m.t.TempDir(),
 		Cert:                  gatewaytest.MustGenCertSignedWithCA(m.t, ca, identity),
+	}
+	if targetURI.IsServer() {
+		config.SSHDialer = rejectDialer{}
+		config.Cert = tls.Certificate{}
+		if config.TargetSubresourceName == "" {
+			config.TargetSubresourceName = "localhost:80"
+		}
 	}
 
 	gateway, err := gateway.New(config)
@@ -166,6 +174,18 @@ func TestGatewayCRUD(t *testing.T) {
 				require.True(t, trace.IsNotFound(err), "gatewayToRemove wasn't removed")
 
 				_, err = daemon.findGateway(gatewayToKeep.URI().String())
+				require.NoError(t, err)
+			},
+		},
+		{
+			name:                   "RemoveGateway of a missing gateway is a noop",
+			gatewayNamesToCreate:   []string{"gateway"},
+			appendGatewayTargetURI: uri.NewClusterURI("foo").AppendDB,
+			testFunc: func(t *testing.T, c *gatewayCRUDTestContext, daemon *Service) {
+				err := daemon.RemoveGateway("/gateways/does-not-exist")
+				require.NoError(t, err)
+
+				_, err = daemon.findGateway(c.nameToGateway["gateway"].URI().String())
 				require.NoError(t, err)
 			},
 		},
@@ -273,6 +293,36 @@ func TestGatewayCRUD(t *testing.T) {
 			},
 		},
 		{
+			name:                   "CreateGateway returns error if SSH gateway already exists",
+			gatewayNamesToCreate:   []string{"gateway"},
+			appendGatewayTargetURI: uri.NewClusterURI("foo").AppendServer,
+			testFunc: func(t *testing.T, c *gatewayCRUDTestContext, daemon *Service) {
+				createdGateway := c.nameToGateway["gateway"]
+				_, err := daemon.CreateGateway(context.Background(), CreateGatewayParams{
+					TargetURI:             createdGateway.TargetURI().String(),
+					TargetUser:            createdGateway.TargetUser(),
+					TargetSubresourceName: createdGateway.TargetSubresourceName(),
+				})
+				require.Error(t, err)
+				require.True(t, trace.IsAlreadyExists(err))
+			},
+		},
+		{
+			name:                   "CreateGateway allows SSH gateways with different remotes",
+			gatewayNamesToCreate:   []string{"gateway"},
+			appendGatewayTargetURI: uri.NewClusterURI("foo").AppendServer,
+			testFunc: func(t *testing.T, c *gatewayCRUDTestContext, daemon *Service) {
+				createdGateway := c.nameToGateway["gateway"]
+				second, err := daemon.CreateGateway(context.Background(), CreateGatewayParams{
+					TargetURI:             createdGateway.TargetURI().String(),
+					TargetUser:            createdGateway.TargetUser(),
+					TargetSubresourceName: "localhost:443",
+				})
+				require.NoError(t, err)
+				require.Equal(t, "localhost:443", second.TargetSubresourceName())
+			},
+		},
+		{
 			name:                   "SetTargetSubresourceName returns error if db gateway already exists",
 			gatewayNamesToCreate:   []string{"gateway"},
 			appendGatewayTargetURI: uri.NewClusterURI("foo").AppendDB,
@@ -321,10 +371,15 @@ func TestGatewayCRUD(t *testing.T) {
 
 			for _, gatewayName := range tt.gatewayNamesToCreate {
 				gatewayName := gatewayName
+				targetURI := tt.appendGatewayTargetURI(gatewayName)
+				targetSubresourceName := ""
+				if targetURI.IsServer() {
+					targetSubresourceName = "localhost:80"
+				}
 				gateway, err := daemon.CreateGateway(context.Background(), CreateGatewayParams{
-					TargetURI:             tt.appendGatewayTargetURI(gatewayName).String(),
+					TargetURI:             targetURI.String(),
 					TargetUser:            "alice",
-					TargetSubresourceName: "",
+					TargetSubresourceName: targetSubresourceName,
 					LocalPort:             "",
 				})
 				require.NoError(t, err)
@@ -714,10 +769,22 @@ func TestGetGatewayCLICommand(t *testing.T) {
 		{
 			name: "unsupported gateway",
 			inputGateway: fakeGateway{
-				targetURI: uri.NewClusterURI("profile").AppendServer("server"),
+				targetURI: uri.NewClusterURI("profile").AppendWindowsDesktop("win"),
 			},
 			checkError: require.Error,
 			checkCmds:  func(*testing.T, cmd.Cmds) {},
+		},
+		{
+			name: "ssh gateway",
+			inputGateway: fakeGateway{
+				targetURI:       uri.NewClusterURI("profile").AppendServer("server"),
+				subresourceName: "localhost:80",
+			},
+			checkError: require.NoError,
+			checkCmds: func(t *testing.T, cmds cmd.Cmds) {
+				t.Helper()
+				require.Contains(t, strings.Join(cmds.Preview.Args, " "), "http://localhost:8888")
+			},
 		},
 		{
 			name: "database gateway",
@@ -802,4 +869,10 @@ type fakeClientCache struct {
 
 func (f fakeClientCache) Get(ctx context.Context, profileName, leafClusterName string) (*client.ClusterClient, error) {
 	return &client.ClusterClient{}, nil
+}
+
+type rejectDialer struct{}
+
+func (rejectDialer) DialContext(context.Context, string, string) (net.Conn, error) {
+	return nil, errors.New("dial not implemented")
 }

@@ -90,6 +90,16 @@ func TestParseGatewayTargetURI(t *testing.T) {
 			out:        uri.NewClusterURI("foo").AppendLeafCluster("bar").AppendKube("kube"),
 			checkError: require.NoError,
 		},
+		{
+			in:         uri.NewClusterURI("foo").AppendServer("server1").String(),
+			out:        uri.NewClusterURI("foo").AppendServer("server1"),
+			checkError: require.NoError,
+		},
+		{
+			in:         uri.NewClusterURI("foo").AppendLeafCluster("bar").AppendServer("server1").String(),
+			out:        uri.NewClusterURI("foo").AppendLeafCluster("bar").AppendServer("server1"),
+			checkError: require.NoError,
+		},
 	}
 
 	for _, tt := range tests {

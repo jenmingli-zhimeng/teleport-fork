@@ -65,8 +65,8 @@ export interface DocumentTshNode extends DocumentBase {
 }
 
 /**
- * DocumentGateway is used for database and app gateways. The two are distinguished by the kind of
- * resource that targetUri points to.
+ * DocumentGateway is used for database, app, and SSH port-forward gateways. The kind is
+ * distinguished by the resource that targetUri points to.
  */
 export interface DocumentGateway extends DocumentBase {
   kind: 'doc.gateway';
@@ -76,10 +76,12 @@ export interface DocumentGateway extends DocumentBase {
    * gatewayUri is not present until the gateway described by the document is created.
    */
   gatewayUri?: uri.GatewayUri;
-  targetUri: uri.DatabaseUri | uri.AppUri;
+  targetUri: uri.DatabaseUri | uri.AppUri | uri.ServerUri;
   /**
-   * targetUser is used only for db gateways and must contain the db user. Connect allows only a
-   * single doc.gateway to exist per targetUri + targetUser combo.
+   * targetUser is the db user for db gateways and the SSH login for SSH port
+   * forwards. Connect allows only a single doc.gateway to exist per
+   * targetUri + targetUser combo for databases, and per
+   * targetUri + targetUser + targetSubresourceName for SSH.
    */
   targetUser: string;
   /**
@@ -88,15 +90,19 @@ export interface DocumentGateway extends DocumentBase {
    */
   targetName: string;
   /**
-   * targetSubresourceName contains database name for db gateways and target port for TCP app
-   * gateways. A DocumentGateway created for a multi-port TCP app is expected to always have this
-   * field present.
+   * targetSubresourceName contains database name for db gateways, target port
+   * for TCP app gateways, and the remote host:port for SSH port forwards. A
+   * DocumentGateway created for a multi-port TCP app is expected to always have
+   * this field present.
    *
-   * For app gateways, Connect allows only a single doc.gateway to exist per targetUri +
-   * targetSubresourceName combo.
+   * For app gateways, Connect allows only a single doc.gateway to exist per
+   * targetUri + targetSubresourceName combo.
    *
-   * For db gateways, targetSubresourceName is not taken into account when considering document
-   * "uniqueness".
+   * For SSH gateways, uniqueness is targetUri + targetUser +
+   * targetSubresourceName.
+   *
+   * For db gateways, targetSubresourceName is not taken into account when
+   * considering document uniqueness.
    */
   targetSubresourceName: string | undefined;
   /**
@@ -111,6 +117,16 @@ export interface DocumentGateway extends DocumentBase {
    * targetProtocol is the protocol of the resource proxied by the gateway.
    */
   targetProtocol?: string;
+  /**
+   * When true, tshd closes the SSH port forward after 15 minutes with no TCP
+   * connections. Used by one-click HTTP/HTTPS forwards.
+   */
+  sshIdleTimeout?: boolean;
+  /**
+   * When true, the SSH gateway document opens the local URL in a browser after
+   * the gateway is created. Cleared after the browser is launched.
+   */
+  sshOpenInBrowser?: boolean;
 }
 
 /**
@@ -323,7 +339,7 @@ export function canDocChangeShell(
 
 export type CreateGatewayDocumentOpts = {
   gatewayUri?: uri.GatewayUri;
-  targetUri: uri.DatabaseUri | uri.AppUri;
+  targetUri: uri.DatabaseUri | uri.AppUri | uri.ServerUri;
   targetName: string;
   targetUser: string;
   targetSubresourceName?: string;
@@ -331,6 +347,8 @@ export type CreateGatewayDocumentOpts = {
   port?: string;
   origin: DocumentOrigin;
   targetProtocol?: string;
+  sshIdleTimeout?: boolean;
+  sshOpenInBrowser?: boolean;
 };
 
 export type CreateAccessRequestDocumentOpts = {

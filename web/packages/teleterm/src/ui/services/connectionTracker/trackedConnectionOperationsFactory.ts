@@ -153,22 +153,29 @@ export class TrackedConnectionOperationsFactory {
         documentsService.open(gwDoc.uri);
       },
       disconnect: async () => {
-        // When disconnecting, assume that the gateway exists. If a gateway doesn't exist, the UI is
-        // supposed to expose the remove operation, not the disconnect operation.
-        const gw = this._clustersService.findGatewayByConnectionParams({
-          targetUri: connection.targetUri,
-          targetUser: connection.targetUser,
-          targetSubresourceName: connection.targetSubresourceName,
-        });
-
-        return this._clustersService.removeGateway(gw.uri).then(() => {
+        const closeDocuments = () => {
           documentsService
             .getDocuments()
             .filter(getGatewayDocumentByConnection(connection))
             .forEach(document => {
               documentsService.close(document.uri);
             });
+        };
+
+        // The gateway may already be gone on the daemon side (idle timeout or
+        // dropped SSH session) while this connection is still shown as
+        // connected. Close documents either way so the user can map again.
+        const gw = this._clustersService.findGatewayByConnectionParams({
+          targetUri: connection.targetUri,
+          targetUser: connection.targetUser,
+          targetSubresourceName: connection.targetSubresourceName,
         });
+        if (!gw) {
+          closeDocuments();
+          return;
+        }
+
+        return this._clustersService.removeGateway(gw.uri).then(closeDocuments);
       },
       remove: async () => {},
     };

@@ -21,7 +21,9 @@ package daemon
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -386,7 +388,7 @@ func (s *Service) createGateway(ctx context.Context, params CreateGatewayParams)
 		return gateway, nil
 	}
 
-	if err := s.checkIfGatewayAlreadyExists(targetURI, params); err != nil {
+	if err := s.checkIfGatewayAlreadyExists(targetURI, params, ""); err != nil {
 		return nil, trace.Wrap(err)
 	}
 
@@ -411,15 +413,59 @@ func (s *Service) createGateway(ctx context.Context, params CreateGatewayParams)
 		return nil, trace.Wrap(err)
 	}
 
-	go func() {
-		if err := gateway.Serve(); err != nil {
-			gateway.Log().WarnContext(ctx, "Failed to handle a gateway connection", "error", err)
-		}
-	}()
-
+	s.serveGateway(gateway)
 	s.gateways[gateway.URI().String()] = gateway
 
 	return gateway, nil
+}
+
+// serveGateway starts the gateway listener and removes it from the daemon map
+// if Serve returns, notifying the Electron app when an SSH forward stops on
+// its own.
+func (s *Service) serveGateway(gw gateway.Gateway) {
+	go func() {
+		err := gw.Serve()
+		if err != nil {
+			gw.Log().WarnContext(s.closeContext, "Failed to handle a gateway connection", "error", err)
+		}
+		s.onGatewayServeDone(gw, err)
+	}()
+}
+
+func (s *Service) onGatewayServeDone(gw gateway.Gateway, serveErr error) {
+	s.gatewaysMu.Lock()
+	current, ok := s.gateways[gw.URI().String()]
+	if !ok || current != gw {
+		s.gatewaysMu.Unlock()
+		return
+	}
+	delete(s.gateways, gw.URI().String())
+	s.gatewaysMu.Unlock()
+
+	// User-initiated RemoveGateway already deleted the entry. Any other Serve
+	// completion for an SSH forward (idle timeout, SSH session drop, listener
+	// error) must tell the Electron app so it can drop stale UI state.
+	if !gw.TargetURI().IsServer() {
+		return
+	}
+
+	errMsg := gateway.ErrSSHGatewayClosed.Error()
+	if errors.Is(serveErr, gateway.ErrIdleTimeout) {
+		errMsg = gateway.ErrIdleTimeout.Error()
+	}
+
+	notifyErr := s.NotifyApp(s.closeContext, &api.SendNotificationRequest{
+		Subject: &api.SendNotificationRequest_CannotProxyGatewayConnection{
+			CannotProxyGatewayConnection: &api.CannotProxyGatewayConnection{
+				GatewayUri: gw.URI().String(),
+				TargetUri:  gw.TargetURI().String(),
+				Error:      errMsg,
+			},
+		},
+	})
+	if notifyErr != nil {
+		s.cfg.Logger.ErrorContext(s.closeContext, "Failed to send SSH gateway closed notification", "error", notifyErr)
+	}
 }
 
 // reissueGatewayCerts tries to reissue gateway certs. It handles asking the user to relogin and
@@ -482,13 +528,18 @@ func (s *Service) reissueGatewayCerts(ctx context.Context, g gateway.Gateway) (t
 	return cert, nil
 }
 
-// RemoveGateway removes cluster gateway
+// RemoveGateway removes cluster gateway. Closing an already-gone gateway is a
+// no-op so the UI can recover after tshd has already torn the listener down
+// (idle timeout or dropped SSH session).
 func (s *Service) RemoveGateway(gatewayURI string) error {
 	s.gatewaysMu.Lock()
 	defer s.gatewaysMu.Unlock()
 
 	gateway, err := s.findGateway(gatewayURI)
 	if err != nil {
+		if trace.IsNotFound(err) {
+			return nil
+		}
 		return trace.Wrap(err)
 	}
 
@@ -535,8 +586,8 @@ func (s *Service) ListGateways() []gateway.Gateway {
 }
 
 // GetGatewayCLICommand creates the CLI command used for the provided gateway.
-func (s *Service) GetGatewayCLICommand(ctx context.Context, gateway gateway.Gateway) (cmd.Cmds, error) {
-	targetURI := gateway.TargetURI()
+func (s *Service) GetGatewayCLICommand(ctx context.Context, gw gateway.Gateway) (cmd.Cmds, error) {
+	targetURI := gw.TargetURI()
 	switch {
 	case targetURI.IsDB():
 		cluster, _, err := s.cfg.Storage.GetByResourceURI(targetURI)
@@ -549,16 +600,22 @@ func (s *Service) GetGatewayCLICommand(ctx context.Context, gateway gateway.Gate
 			return cmd.Cmds{}, trace.Wrap(err)
 		}
 
-		cmds, err := cmd.NewDBCLICommand(ctx, cluster, gateway, clusterClient.AuthClient)
+		cmds, err := cmd.NewDBCLICommand(ctx, cluster, gw, clusterClient.AuthClient)
 		return cmds, trace.Wrap(err)
 
 	case targetURI.IsKube():
-		cmds, err := cmd.NewKubeCLICommand(gateway)
+		cmds, err := cmd.NewKubeCLICommand(gw)
 		return cmds, trace.Wrap(err)
 
 	case targetURI.IsApp():
 		blankCmd := exec.Command("")
 		return cmd.Cmds{Exec: blankCmd, Preview: blankCmd}, nil
+
+	case targetURI.IsServer():
+		preview := gateway.SSHForwardCLIPreview(gw.LocalAddress(), gw.LocalPort(), gw.Protocol())
+		previewCmd := exec.Command("curl")
+		previewCmd.Args = []string{"curl", strings.TrimPrefix(preview, "curl ")}
+		return cmd.Cmds{Exec: previewCmd, Preview: previewCmd}, nil
 
 	default:
 		return cmd.Cmds{}, trace.NotImplemented("gateway not supported for %v", targetURI)
@@ -571,19 +628,20 @@ func (s *Service) SetGatewayTargetSubresourceName(ctx context.Context, gatewayUR
 	s.gatewaysMu.Lock()
 	defer s.gatewaysMu.Unlock()
 
-	gateway, err := s.findGateway(gatewayURI)
+	gw, err := s.findGateway(gatewayURI)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	if err := s.checkIfGatewayAlreadyExists(gateway.TargetURI(), CreateGatewayParams{
-		TargetURI:             gateway.TargetURI().String(),
+	if err := s.checkIfGatewayAlreadyExists(gw.TargetURI(), CreateGatewayParams{
+		TargetURI:             gw.TargetURI().String(),
+		TargetUser:            gw.TargetUser(),
 		TargetSubresourceName: targetSubresourceName,
-	}); err != nil {
+	}, gw.URI().String()); err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	targetURI := gateway.TargetURI()
+	targetURI := gw.TargetURI()
 	switch {
 	case targetURI.IsApp():
 		clusterClient, err := s.GetCachedClient(ctx, targetURI)
@@ -603,11 +661,17 @@ func (s *Service) SetGatewayTargetSubresourceName(ctx context.Context, gatewayUR
 		if _, err := clusters.ValidateTargetPort(app, targetSubresourceName); err != nil {
 			return nil, trace.Wrap(err)
 		}
+	case targetURI.IsServer():
+		remoteAddr, _, err := gateway.ParseSSHForwardTarget(targetSubresourceName)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		targetSubresourceName = remoteAddr
 	}
 
-	gateway.SetTargetSubresourceName(targetSubresourceName)
+	gw.SetTargetSubresourceName(targetSubresourceName)
 
-	return gateway, nil
+	return gw, nil
 }
 
 // SetGatewayLocalPort creates a new gateway with the given port, swaps it with the old gateway
@@ -653,12 +717,7 @@ func (s *Service) SetGatewayLocalPort(gatewayURI, localPort string) (gateway.Gat
 	}
 
 	s.gateways[gatewayURI] = newGateway
-
-	go func() {
-		if err := newGateway.Serve(); err != nil {
-			newGateway.Log().WarnContext(s.closeContext, "Failed to handle a gateway connection", "error", err)
-		}
-	}()
+	s.serveGateway(newGateway)
 
 	return newGateway, nil
 }
@@ -1013,6 +1072,10 @@ func (s *Service) TshdEventsClient(ctx context.Context) (api.TshdEventsServiceCl
 
 // NotifyApp sends a notification (usually an error) to the Electron App.
 func (s *Service) NotifyApp(ctx context.Context, notification *api.SendNotificationRequest) error {
+	if s.cfg.TshdEventsClient == nil || s.cfg.TshdEventsClient.client == nil {
+		return nil
+	}
+
 	tshdEventsCtx, cancelTshdEventsCtx := context.WithTimeout(ctx, tshdEventsTimeout)
 	defer cancelTshdEventsCtx()
 

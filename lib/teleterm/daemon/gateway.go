@@ -23,7 +23,7 @@ import (
 	"github.com/gravitational/teleport/lib/teleterm/gateway"
 )
 
-func (s *Service) checkIfGatewayAlreadyExists(targetURI uri.ResourceURI, params CreateGatewayParams) error {
+func (s *Service) checkIfGatewayAlreadyExists(targetURI uri.ResourceURI, params CreateGatewayParams, excludeGatewayURI string) error {
 	var resourceParamsCheckFunc func(g gateway.Gateway) error
 
 	switch {
@@ -48,11 +48,25 @@ func (s *Service) checkIfGatewayAlreadyExists(targetURI uri.ResourceURI, params 
 			}
 			return nil
 		}
+	case targetURI.IsServer():
+		resourceParamsCheckFunc = func(g gateway.Gateway) error {
+			remoteAddr, _, err := gateway.ParseSSHForwardTarget(params.TargetSubresourceName)
+			if err != nil {
+				return trace.Wrap(err)
+			}
+			if g.TargetUser() == params.TargetUser && g.TargetSubresourceName() == remoteAddr {
+				return trace.AlreadyExists("gateway for server %s, user %s and remote %s already exists", targetURI.GetServerUUID(), params.TargetUser, remoteAddr)
+			}
+			return nil
+		}
 	default:
 		return trace.NotImplemented("gateway not supported for %s", targetURI.String())
 	}
 
 	for _, g := range s.gateways {
+		if excludeGatewayURI != "" && g.URI().String() == excludeGatewayURI {
+			continue
+		}
 		if g.TargetURI() != targetURI {
 			continue
 		}

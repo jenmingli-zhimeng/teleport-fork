@@ -138,6 +138,8 @@ export function OfflineGateway<
 export enum FormFields {
   LocalPort = 'localPort',
   TargetSubresourceName = 'targetSubresourceName',
+  RemoteHost = 'remoteHost',
+  RemotePort = 'remotePort',
 }
 type FormFieldNames = `${FormFields}`;
 

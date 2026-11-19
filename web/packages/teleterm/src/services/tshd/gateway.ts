@@ -21,6 +21,7 @@ import {
   isAppUri,
   isDatabaseUri,
   isKubeUri,
+  isServerUri,
   routing,
 } from 'teleterm/ui/uri';
 
@@ -73,6 +74,7 @@ export function getTargetNameFromUri(targetUri: GatewayTargetUri): string {
     routing.parseDbUri(targetUri)?.params['dbId'] ||
     routing.parseKubeUri(targetUri)?.params['kubeId'] ||
     routing.parseAppUri(targetUri)?.params['appId'] ||
+    routing.parseServerUri(targetUri)?.params['serverId'] ||
     targetUri
   );
 }
@@ -83,7 +85,7 @@ export function getTargetNameFromUri(targetUri: GatewayTargetUri): string {
  */
 export function getGatewayTargetUriKind(
   targetUri: string
-): 'db' | 'kube' | 'app' {
+): 'db' | 'kube' | 'app' | 'ssh' {
   if (isDatabaseUri(targetUri)) {
     return 'db';
   }
@@ -94,6 +96,10 @@ export function getGatewayTargetUriKind(
 
   if (isAppUri(targetUri)) {
     return 'app';
+  }
+
+  if (isServerUri(targetUri)) {
+    return 'ssh';
   }
 
   // TODO(ravicious): Optimally we'd use `targetUri satisfies never` here to have a type error when
