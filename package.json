@@ -73,7 +73,7 @@
     "@codemirror/view": "^6.43.0",
     "@floating-ui/react": "^0.27.19",
     "@grpc/grpc-js": "1.14.4",
-    "@hookform/resolvers": "^5.4.0",
+    "@hookform/resolvers": "^7.0.6",
     "@lezer/highlight": "^1.2.3",
     "@nivo/bar": "^0.99.0",
     "@protobuf-ts/runtime": "^2.11.1",
