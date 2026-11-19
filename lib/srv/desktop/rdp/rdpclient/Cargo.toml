@@ -47,7 +47,7 @@ rustls = { version = "0.23.40", default-features = false, features = [
 ] }
 
 [build-dependencies]
-cbindgen = "0.28.0"
+cbindgen = "0.29.4"
 tempfile = "3.19.1"
 
 [features]
