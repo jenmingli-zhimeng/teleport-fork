@@ -48,7 +48,9 @@ export function makeUnifiedResourceViewItemNode(
   ui: UnifiedResourceUi
 ): UnifiedResourceViewItem {
   const nodeSubKind = formatNodeSubKind(resource.subKind);
-  const addressIfNotTunnel = resource.tunnel ? '' : resource.addr;
+  // Reverse-tunnel nodes used to hide addr entirely. Show it when the cluster
+  // recorded the observed peer (NAT public IP).
+  const addressIfNotTunnel = resource.addr || '';
 
   return {
     name: resource.hostname,

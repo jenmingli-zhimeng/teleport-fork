@@ -1051,6 +1051,14 @@ func (s *server) upsertServiceConn(conn net.Conn, sconn *ssh.ServerConn, connTyp
 		return nil, nil, trace.Wrap(err)
 	}
 
+	addr := sconn.RemoteAddr()
+	if addr == nil || utils.PublicHost(addr.String()) == "" {
+		addr = conn.RemoteAddr()
+	}
+	if addr != nil {
+		utils.SetTunnelPeerAddr(nodeID, addr.String())
+	}
+
 	return s.localSite, rconn, nil
 }
 

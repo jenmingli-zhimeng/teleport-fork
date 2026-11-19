@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gravitational/trace"
 	"gopkg.in/yaml.v2"
@@ -88,8 +89,17 @@ type CacheConfig struct {
 
 // SSHConfig is the ssh_service subset.
 type SSHConfig struct {
-	Enabled string            `yaml:"enabled,omitempty"`
-	Labels  map[string]string `yaml:"labels,omitempty"`
+	Enabled  string            `yaml:"enabled,omitempty"`
+	Labels   map[string]string `yaml:"labels,omitempty"`
+	Commands []CommandLabel    `yaml:"commands,omitempty"`
+}
+
+// CommandLabel is one ssh_service.commands entry. The command is executed
+// periodically and its stdout is reported as a node label (device tag).
+type CommandLabel struct {
+	Name    string        `yaml:"name"`
+	Command []string      `yaml:"command,flow"`
+	Period  time.Duration `yaml:"period"`
 }
 
 // EdgeConfig holds teleport-edge specific knobs that are not in upstream yaml.
@@ -121,8 +131,15 @@ var allowedTeleport = map[string]struct{}{
 }
 
 var allowedSSH = map[string]struct{}{
-	"enabled": {},
-	"labels":  {},
+	"enabled":  {},
+	"labels":   {},
+	"commands": {},
+}
+
+var allowedCommand = map[string]struct{}{
+	"name":    {},
+	"command": {},
+	"period":  {},
 }
 
 var allowedEdge = map[string]struct{}{
@@ -178,6 +195,11 @@ func Parse(raw []byte) (*Config, error) {
 		if err := rejectUnknownMap(ssh, allowedSSH, "ssh_service"); err != nil {
 			return nil, err
 		}
+		if cmds, ok := ssh["commands"]; ok {
+			if err := rejectUnknownCommands(cmds); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if edge, ok := generic["edge_service"].(map[any]any); ok {
 		if err := rejectUnknownMap(edge, allowedEdge, "edge_service"); err != nil {
@@ -215,6 +237,23 @@ func rejectUnknownMap(m map[any]any, allowed map[string]struct{}, prefix string)
 		}
 		if _, ok := allowed[key]; !ok {
 			return trace.BadParameter("unsupported config field %q", prefix+"."+key)
+		}
+	}
+	return nil
+}
+
+func rejectUnknownCommands(cmds any) error {
+	list, ok := cmds.([]any)
+	if !ok {
+		return trace.BadParameter("ssh_service.commands must be a list")
+	}
+	for i, item := range list {
+		m, ok := item.(map[any]any)
+		if !ok {
+			return trace.BadParameter("ssh_service.commands[%d] must be a map", i)
+		}
+		if err := rejectUnknownMap(m, allowedCommand, fmt.Sprintf("ssh_service.commands[%d]", i)); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -277,8 +316,32 @@ func (c *Config) CheckAndSetDefaults() error {
 	}
 	c.SSH.Enabled = "yes"
 
+	if err := c.validateCommands(); err != nil {
+		return err
+	}
+
 	if c.Edge.MaxConnections <= 0 {
 		c.Edge.MaxConnections = DefaultMaxConnections
+	}
+	return nil
+}
+
+func (c *Config) validateCommands() error {
+	seen := make(map[string]struct{}, len(c.SSH.Commands))
+	for i, cmd := range c.SSH.Commands {
+		if cmd.Name == "" {
+			return trace.BadParameter("ssh_service.commands[%d].name is required", i)
+		}
+		if !types.IsValidLabelKey(cmd.Name) {
+			return trace.BadParameter("ssh_service.commands[%d] has invalid label key %q", i, cmd.Name)
+		}
+		if len(cmd.Command) == 0 {
+			return trace.BadParameter("ssh_service.commands[%d] (%s) command is required", i, cmd.Name)
+		}
+		if _, dup := seen[cmd.Name]; dup {
+			return trace.BadParameter("ssh_service.commands has duplicate name %q", cmd.Name)
+		}
+		seen[cmd.Name] = struct{}{}
 	}
 	return nil
 }
@@ -305,6 +368,22 @@ func (c *Config) Labels() map[string]string {
 	}
 	for k, v := range c.SSH.Labels {
 		out[k] = v
+	}
+	return out
+}
+
+// CmdLabels converts ssh_service.commands into the command labels used to
+// report periodic device tags on the SSH server.
+func (c *Config) CmdLabels() map[string]types.CommandLabel {
+	if len(c.SSH.Commands) == 0 {
+		return nil
+	}
+	out := make(map[string]types.CommandLabel, len(c.SSH.Commands))
+	for _, cmd := range c.SSH.Commands {
+		out[cmd.Name] = &types.CommandLabelV2{
+			Period:  types.NewDuration(cmd.Period),
+			Command: append([]string(nil), cmd.Command...),
+		}
 	}
 	return out
 }

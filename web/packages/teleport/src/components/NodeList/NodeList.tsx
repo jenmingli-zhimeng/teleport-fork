@@ -149,7 +149,7 @@ const renderLoginCell = (
 };
 
 const renderAddressCell = ({ addr, tunnel }: Node) => (
-  <Cell>{tunnel ? renderTunnel() : addr}</Cell>
+  <Cell>{addr || (tunnel ? renderTunnel() : '')}</Cell>
 );
 
 function renderTunnel() {

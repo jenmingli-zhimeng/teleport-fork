@@ -2287,3 +2287,79 @@ func (r *resourceCounter) count() int {
 	}
 	return count
 }
+
+func TestApplyObservedPeerAddr(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty addr uses public ics peer", func(t *testing.T) {
+		srv := &types.ServerV2{
+			Metadata: types.Metadata{Name: "node-ics"},
+			Spec:     types.ServerSpecV2{UseTunnel: true},
+		}
+		applyObservedPeerAddr(srv, "203.0.113.10:54321")
+		require.Equal(t, "203.0.113.10", srv.GetAddr())
+		require.Equal(t, "203.0.113.10", srv.Metadata.Labels[labelTunnelIP])
+	})
+
+	t.Run("loopback ics is ignored", func(t *testing.T) {
+		srv := &types.ServerV2{
+			Metadata: types.Metadata{Name: "node-loopback"},
+			Spec:     types.ServerSpecV2{UseTunnel: true},
+		}
+		applyObservedPeerAddr(srv, "127.0.0.1:1")
+		require.Empty(t, srv.GetAddr())
+		require.Empty(t, srv.Metadata.Labels[labelTunnelIP])
+	})
+
+	t.Run("reverse tunnel peer preferred over loopback ics", func(t *testing.T) {
+		const id = "node-tunnel-peer"
+		utils.SetTunnelPeerAddr(id, "198.51.100.9:9")
+		srv := &types.ServerV2{
+			Metadata: types.Metadata{Name: id},
+			Spec:     types.ServerSpecV2{UseTunnel: true},
+		}
+		applyObservedPeerAddr(srv, "127.0.0.1:1")
+		require.Equal(t, "198.51.100.9", srv.GetAddr())
+		require.Equal(t, "198.51.100.9", srv.Metadata.Labels[labelTunnelIP])
+	})
+
+	t.Run("tunnel ssh username uuid.cluster matches heartbeat uuid", func(t *testing.T) {
+		const uuid = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+		utils.SetTunnelPeerAddr(uuid+".ops.example.com", "198.51.100.77:9")
+		srv := &types.ServerV2{
+			Metadata: types.Metadata{Name: uuid},
+			Spec:     types.ServerSpecV2{UseTunnel: true},
+		}
+		applyObservedPeerAddr(srv, "127.0.0.1:1")
+		require.Equal(t, "198.51.100.77", srv.GetAddr())
+		require.Equal(t, "198.51.100.77", srv.Metadata.Labels[labelTunnelIP])
+	})
+
+	t.Run("replace localhost keeps advertised port", func(t *testing.T) {
+		srv := &types.ServerV2{
+			Metadata: types.Metadata{Name: "node-direct"},
+			Spec:     types.ServerSpecV2{Addr: "0.0.0.0:3022"},
+		}
+		applyObservedPeerAddr(srv, "1.2.3.4:456")
+		require.Equal(t, "1.2.3.4:3022", srv.GetAddr())
+		require.Equal(t, "1.2.3.4", srv.Metadata.Labels[labelTunnelIP])
+	})
+
+	t.Run("does not copy immutable labels into static labels", func(t *testing.T) {
+		srv := &types.ServerV2{
+			Metadata: types.Metadata{
+				Name:   "node-labels",
+				Labels: map[string]string{"env": "lab"},
+			},
+			Spec: types.ServerSpecV2{
+				UseTunnel:       true,
+				ImmutableLabels: map[string]string{"foo": "bar"},
+			},
+		}
+		applyObservedPeerAddr(srv, "203.0.113.8:1")
+		require.Equal(t, "lab", srv.Metadata.Labels["env"])
+		require.Equal(t, "203.0.113.8", srv.Metadata.Labels[labelTunnelIP])
+		require.NotContains(t, srv.Metadata.Labels, "foo")
+		require.Equal(t, "bar", srv.GetImmutableLabels()["foo"])
+	})
+}

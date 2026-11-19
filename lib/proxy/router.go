@@ -264,15 +264,15 @@ func (r *Router) DialHost(ctx context.Context, scopePin *scopesv1.Pin, clientSrc
 	}
 
 	serverAddr := target.GetAddr()
-	switch {
-	case serverAddr != "":
-		h, _, err := net.SplitHostPort(serverAddr)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-
+	if h, _, err := net.SplitHostPort(serverAddr); err == nil {
 		principals = append(principals, h)
-	case serverAddr == "" && target.GetUseTunnel():
+	} else if serverAddr != "" {
+		// Reverse-tunnel agents may store a display-only NAT IP without a
+		// port. That value is not a dialable address.
+		principals = append(principals, serverAddr)
+		serverAddr = ""
+	}
+	if serverAddr == "" && target.GetUseTunnel() {
 		serverAddr = reversetunnelclient.LocalNode
 	}
 

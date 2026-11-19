@@ -63,7 +63,7 @@ function bodies. When merging an upstream tag, re-run
 | `lib/reversetunnel/transport.go` | body trim | Dropped duplicate `parseDialReq` / `getTCPAddr` left after extracting `transport_dial.go`. |
 | `lib/reversetunnel/transport_dial.go` | new | `parseDialReq` / `getTCPAddr` for the agent pool. |
 | `lib/reversetunnel/agent_metrics.go` | new | `versionRequest` and trusted-cluster Prometheus metric. |
-| `lib/reversetunnel/agentpool.go` | split | Remote-cluster transport delegated to tagged helpers. |
+| `lib/reversetunnel/agentpool.go` | split + additive | Remote-cluster transport delegated to tagged helpers. Optional `KeepAliveInterval`/`KeepAliveCount` so constrained agents can detect dead tunnels faster than the 5m cluster default. |
 | `lib/reversetunnel/agentpool_remote.go` | new `!edgeagent` | Proxy-to-proxy transport. |
 | `lib/reversetunnel/agentpool_remote_edge.go` | new `edgeagent` | Logs and closes remote-cluster transports. |
 | `lib/reversetunnel/localsite_eice.go` | new `!edgeagent` | AWS EICE reverse-tunnel helper. |
@@ -105,9 +105,10 @@ contains kube/db/desktop protobufs because they live in one generated package.
 
 `lib/bpf` is the NOP implementation only (no eBPF bytecode).
 
-teleport-edge keeps Shell, SFTP/SCP, and SSH TCP port forwarding (`direct-tcpip`
-and `tcpip-forward`). X11, PAM, SELinux, host-user creation, ProxyJump, and
-Proxy peering are disabled or not compiled.
+teleport-edge keeps Shell, SFTP/SCP, SSH TCP port forwarding (`direct-tcpip`
+and `tcpip-forward`), and `ssh_service.commands` command labels (periodic
+local commands whose stdout is reported as node labels). X11, PAM, SELinux,
+host-user creation, ProxyJump, and Proxy peering are disabled or not compiled.
 
 ## Upstream-friendly follow-ups
 

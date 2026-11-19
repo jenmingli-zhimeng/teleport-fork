@@ -144,6 +144,13 @@ type AgentPoolConfig struct {
 	PROXYSigner multiplexer.PROXYHeaderSigner
 	// StaleConnTimeoutDisabled is true if connection timeouts are disabled.
 	StaleConnTimeoutDisabled bool
+	// KeepAliveInterval overrides the cluster networking keep-alive interval
+	// when greater than zero. Used by constrained agents that must detect
+	// dead tunnels faster than the cluster default (typically 5 minutes).
+	KeepAliveInterval time.Duration
+	// KeepAliveCount overrides the cluster networking keep-alive miss count
+	// when greater than zero.
+	KeepAliveCount int
 }
 
 // CheckAndSetDefaults checks and sets defaults.
@@ -199,6 +206,16 @@ func NewAgentPool(ctx context.Context, config AgentPoolConfig) (*AgentPool, erro
 		return nil, trace.Wrap(err)
 	}
 
+	runtimeConfig := newAgentPoolRuntimeConfig()
+	if config.KeepAliveInterval > 0 {
+		runtimeConfig.keepAliveInterval = config.KeepAliveInterval
+		runtimeConfig.keepAliveIntervalOverride = config.KeepAliveInterval
+	}
+	if config.KeepAliveCount > 0 {
+		runtimeConfig.keepAliveCount = config.KeepAliveCount
+		runtimeConfig.keepAliveCountOverride = config.KeepAliveCount
+	}
+
 	pool := &AgentPool{
 		AgentPoolConfig: config,
 		active:          newAgentStore(),
@@ -209,7 +226,7 @@ func NewAgentPool(ctx context.Context, config AgentPoolConfig) (*AgentPool, erro
 			"target_cluster", config.Cluster,
 			"local_cluster", config.LocalCluster,
 		),
-		runtimeConfig: newAgentPoolRuntimeConfig(),
+		runtimeConfig: runtimeConfig,
 	}
 
 	pool.runtimeConfig.isRemoteCluster = pool.IsRemoteCluster
@@ -622,6 +639,12 @@ type agentPoolRuntimeConfig struct {
 	// keepAliveCount specifies the amount of missed ping heartbeats
 	// to wait for before declaring the connection as broken.
 	keepAliveCount int
+	// keepAliveIntervalOverride, when set, is used instead of the cluster
+	// networking keep-alive interval.
+	keepAliveIntervalOverride time.Duration
+	// keepAliveCountOverride, when set, is used instead of the cluster
+	// networking keep-alive count.
+	keepAliveCountOverride int
 	// isRemoteCluster forces the agent pool to connect to all proxies
 	// regardless of the configured tunnel strategy.
 	isRemoteCluster bool
@@ -787,8 +810,14 @@ func (c *agentPoolRuntimeConfig) update(ctx context.Context, netConfig types.Clu
 	defer c.mu.Unlock()
 
 	oldProxyListenerMode := c.proxyListenerMode
-	c.keepAliveInterval = netConfig.GetKeepAliveInterval()
-	if v := int(netConfig.GetKeepAliveCountMax()); v > 0 {
+	if c.keepAliveIntervalOverride > 0 {
+		c.keepAliveInterval = c.keepAliveIntervalOverride
+	} else {
+		c.keepAliveInterval = netConfig.GetKeepAliveInterval()
+	}
+	if c.keepAliveCountOverride > 0 {
+		c.keepAliveCount = c.keepAliveCountOverride
+	} else if v := int(netConfig.GetKeepAliveCountMax()); v > 0 {
 		c.keepAliveCount = v
 	}
 	c.proxyListenerMode = netConfig.GetProxyListenerMode()

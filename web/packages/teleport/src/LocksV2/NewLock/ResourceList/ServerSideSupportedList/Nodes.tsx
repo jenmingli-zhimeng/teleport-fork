@@ -77,7 +77,7 @@ export function Nodes(props: ServerSideListProps & { nodes: Node[] }) {
 }
 
 export const renderAddressCell = ({ addr, tunnel }: Node) => (
-  <Cell>{tunnel ? renderTunnel() : addr}</Cell>
+  <Cell>{addr || (tunnel ? renderTunnel() : '')}</Cell>
 );
 
 function renderTunnel() {

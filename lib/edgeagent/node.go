@@ -108,7 +108,7 @@ func (p *Process) runNode(ctx context.Context, conn *Connector, inventoryHandle 
 		regular.SetNamespace(apidefaults.Namespace),
 		regular.SetLimiter(lim),
 		regular.SetEmitter(streamEmitter),
-		regular.SetLabels(p.cfg.Labels(), nil, nil),
+		regular.SetLabels(p.cfg.Labels(), services.CommandLabels(p.cfg.CmdLabels()), nil),
 		regular.SetUseTunnel(true),
 		regular.SetBPF(&bpf.NOP{}),
 		regular.SetAllowTCPForwarding(true),
@@ -149,6 +149,8 @@ func (p *Process) runNode(ctx context.Context, conn *Connector, inventoryHandle 
 		Cluster:              conn.ClusterName(),
 		Server:               s,
 		ConnectedProxyGetter: proxyGetter,
+		KeepAliveInterval:    edgeKeepAliveInterval,
+		KeepAliveCount:       edgeKeepAliveCount,
 	})
 	if err != nil {
 		return trace.Wrap(err)

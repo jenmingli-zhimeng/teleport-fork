@@ -857,6 +857,19 @@ func TestRouter_DialHost(t *testing.T) {
 		},
 	}
 
+	tunnelSrv := &types.ServerV2{
+		Kind:    types.KindNode,
+		Version: types.V2,
+		Metadata: types.Metadata{
+			Name: uuid.NewString(),
+		},
+		Spec: types.ServerSpecV2{
+			Addr:      "123.116.190.219",
+			Hostname:  "edge",
+			UseTunnel: true,
+		},
+	}
+
 	agentGetter := func() (sshagent.Client, error) {
 		return nil, nil
 	}
@@ -964,6 +977,22 @@ func TestRouter_DialHost(t *testing.T) {
 				require.Nil(t, params.GetUserAgent)
 				require.Nil(t, params.AgentlessSignerCreator)
 				require.NotNil(t, conn)
+			},
+		},
+		{
+			name: "dial success to reverse-tunnel node with portless NAT addr",
+			router: Router{
+				clusterName:    "test",
+				localCluster:   &testRemoteSite{conn: fakeConn{}},
+				tracer:         tracing.NoopTracer("test"),
+				serverResolver: serverResolver(tunnelSrv, nil),
+			},
+			assertion: func(t *testing.T, params reversetunnelclient.DialParams, conn net.Conn, err error) {
+				require.NoError(t, err)
+				require.Equal(t, tunnelSrv, params.TargetServer)
+				require.NotNil(t, conn)
+				require.Equal(t, reversetunnelclient.LocalNode, params.To.String())
+				require.Contains(t, params.Principals, "123.116.190.219")
 			},
 		},
 	}

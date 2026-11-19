@@ -859,8 +859,14 @@ func (g *GRPCServer) InventoryControlStream(stream authpb.AuthService_InventoryC
 	if !ok {
 		return trace.BadParameter("unable to find peer")
 	}
+	peerAddr := p.Addr.String()
+	if src, err := authz.ClientSrcAddrFromContext(stream.Context()); err == nil && src != nil {
+		if pub := utils.PublicHostPort(src.String()); pub != "" {
+			peerAddr = pub
+		}
+	}
 
-	ics := client.NewUpstreamInventoryControlStream(stream, p.Addr.String())
+	ics := client.NewUpstreamInventoryControlStream(stream, peerAddr)
 
 	hello, err := auth.RegisterInventoryControlStream(ics)
 	if err != nil {

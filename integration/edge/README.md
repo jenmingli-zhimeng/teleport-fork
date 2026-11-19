@@ -26,6 +26,8 @@ The script:
 3. Creates a local user and checks `tsh ssh`, `tsh scp` (SFTP), and TCP port forwarding (`tsh ssh -L` / `-R`).
 4. Samples idle / 1-session RSS and runs 6 concurrent sessions.
 5. Kills and restarts the edge container, then restarts auth, and checks reconnect.
+   The agent also watches default-route and WAN-source-address changes so a WAN
+   failover rebuilds the reverse tunnel in-process (LAN port up/down is ignored).
 6. Creates a lock and checks that a new SSH session is rejected, then removes it.
 7. Starts a host CA rotation and checks that SSH still works.
 

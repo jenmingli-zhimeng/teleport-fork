@@ -327,8 +327,10 @@ func (p *Process) newClientThroughTunnel(ctx context.Context, conn *Connector) (
 		return nil, nil, trace.Wrap(err)
 	}
 	clt, err := authclient.NewClient(apiclient.Config{
-		Context: ctx,
-		Dialer:  dialer,
+		Context:         ctx,
+		Dialer:          dialer,
+		KeepAlivePeriod: edgeKeepAliveInterval,
+		KeepAliveCount:  edgeKeepAliveCount,
 		Credentials: []apiclient.Credentials{
 			apiclient.LoadTLS(tlsConfig),
 		},

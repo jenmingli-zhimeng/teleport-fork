@@ -16,8 +16,14 @@
 
 // Package edgeagent is a reduced Teleport SSH Node runtime for constrained
 // devices (OpenWrt routers and similar). It reuses upstream packages for
-// reverse tunnels, token join, SSH sessions, SFTP/SCP and TCP port
-// forwarding, and replaces the sqlite-backed process storage with files.
+// reverse tunnels, token join, SSH sessions, SFTP/SCP, TCP port
+// forwarding, and ssh_service.commands device-tag labels, and replaces
+// the sqlite-backed process storage with files.
+//
+// Reverse tunnels are recreated in-process when the default route or the
+// source address on that path changes, or when auth pings fail repeatedly.
+// Link up/down of LAN/switch ports does not restart the process or the
+// tunnel.
 //
 // Cluster recording should use session_recording: node-sync so session data
 // is not buffered on flash. If async recording is required, put data_dir/log

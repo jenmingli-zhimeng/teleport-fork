@@ -222,6 +222,36 @@ if ! wait_for "edge-node registration" 90 node_registered; then
 fi
 pass "edge-node registered via reverse tunnel"
 
+command_label_os() {
+  if ! tctl get nodes --format=json >"$WORKDIR/nodes.json" 2>/dev/null; then
+    return 1
+  fi
+  python3 - "$WORKDIR/nodes.json" <<'PY'
+import json, sys
+raw = open(sys.argv[1]).read().strip()
+if not raw:
+    sys.exit(1)
+data = json.loads(raw)
+if isinstance(data, dict):
+    data = [data]
+for n in data:
+    spec = n.get("spec") or {}
+    if (spec.get("hostname") or "") != "edge-node":
+        continue
+    labels = spec.get("cmd_labels") or {}
+    os_label = labels.get("os") or {}
+    result = str(os_label.get("result") or "").strip()
+    sys.exit(0 if result == "Linux" else 1)
+sys.exit(1)
+PY
+}
+
+if wait_for "edge-node os command label" 30 command_label_os; then
+  pass "ssh_service.commands os=Linux"
+else
+  fail "ssh_service.commands os label"
+fi
+
 IDLE_RSS="$(rss_kb || true)"
 echo "idle VmRSS=${IDLE_RSS:-unknown} kB" | tee -a "$RESULTS"
 

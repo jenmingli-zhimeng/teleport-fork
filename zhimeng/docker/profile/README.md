@@ -8,21 +8,21 @@ Auth + Proxy 单进程，`proxy_listener_mode: multiplex`，对外只暴露一�
 
 | 路径 | 用途 |
 | --- | --- |
-| `.local/docker/profile/` | Dockerfile、compose、entrypoint、本说明 |
-| `.local/docker/images/` | `docker save` 出的镜像包 |
-| `.local/docker/tmp/` | 构建时的临时文件 |
+| `zhimeng/docker/profile/` | Dockerfile、compose、entrypoint、本说明 |
+| `zhimeng/docker/images/` | `docker save` 出的镜像包 |
+| `zhimeng/docker/tmp/` | 构建时的临时文件 |
 
 ## 1. 本机构建
 
 ```bash
-cd .local/docker/profile
+cd zhimeng/docker/profile
 ./build.sh
 ```
 
 产物：
 
 - 镜像标签：`teleport-cluster:18.10.0`
-- 文件：`.local/docker/images/teleport-cluster-18.10.0-linux-amd64.tar.gz`
+- 文件：`zhimeng/docker/images/teleport-cluster-18.10.0-linux-amd64.tar.gz`
 
 将 tar.gz、本目录下的 `docker-compose.yaml`、`.env.example`、空的 `certs/` 与 `logo/` 一起拷到目标机。
 

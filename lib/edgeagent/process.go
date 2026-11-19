@@ -33,6 +33,7 @@ import (
 	"github.com/gravitational/teleport/api/client/proto"
 	"github.com/gravitational/teleport/api/client/webclient"
 	"github.com/gravitational/teleport/api/types"
+	"github.com/gravitational/teleport/api/utils/retryutils"
 	"github.com/gravitational/teleport/lib"
 	"github.com/gravitational/teleport/lib/auth/state"
 	"github.com/gravitational/teleport/lib/inventory"
@@ -40,7 +41,22 @@ import (
 	"github.com/gravitational/teleport/lib/utils/log"
 )
 
-const embeddedReexecEnv = "TELEPORT_UNSTABLE_DISABLE_EMBEDDED_REEXEC"
+const (
+	embeddedReexecEnv = "TELEPORT_UNSTABLE_DISABLE_EMBEDDED_REEXEC"
+
+	connectRetryFirst = time.Second
+	connectRetryStep  = 2 * time.Second
+	connectRetryMax   = 30 * time.Second
+
+	healthPingInterval = 20 * time.Second
+	healthPingTimeout  = 10 * time.Second
+	healthPingFails    = 2
+
+	// edgeKeepAliveInterval is short enough to notice WAN/interface failover
+	// on routers without waiting for the cluster default of 5 minutes.
+	edgeKeepAliveInterval = 15 * time.Second
+	edgeKeepAliveCount    = 3
+)
 
 // Process is the teleport-edge agent runtime.
 type Process struct {
@@ -53,6 +69,8 @@ type Process struct {
 
 // Run loads config, joins the cluster, and serves SSH over a reverse tunnel
 // until the context is cancelled or a termination signal is received.
+// Transient connect failures and local network-path changes reconnect in
+// process instead of exiting.
 func Run(ctx context.Context, cfg *Config) error {
 	if err := ApplyMemoryLimit(cfg); err != nil {
 		return trace.Wrap(err)
@@ -78,25 +96,11 @@ func Run(ctx context.Context, cfg *Config) error {
 		return trace.Wrap(err)
 	}
 
-	resolver, err := reversetunnelclient.CachingResolver(
-		ctx,
-		reversetunnelclient.WebClientResolver(&webclient.Config{
-			Context:   ctx,
-			ProxyAddr: cfg.Teleport.ProxyServer,
-			Insecure:  cfg.Teleport.Insecure || lib.IsInsecureDevMode(),
-		}),
-		clockwork.NewRealClock(),
-	)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-
 	p := &Process{
-		cfg:      cfg,
-		logger:   logger.With(teleport.ComponentKey, "edge"),
-		storage:  storage,
-		resolver: resolver,
-		clock:    clockwork.NewRealClock(),
+		cfg:     cfg,
+		logger:  logger.With(teleport.ComponentKey, "edge"),
+		storage: storage,
+		clock:   clockwork.NewRealClock(),
 	}
 	return p.serve(ctx)
 }
@@ -105,22 +109,125 @@ func (p *Process) serve(ctx context.Context) error {
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	retry, err := retryutils.NewLinear(retryutils.LinearConfig{
+		First:  connectRetryFirst,
+		Step:   connectRetryStep,
+		Max:    connectRetryMax,
+		Jitter: retryutils.HalfJitter,
+		Clock:  p.clock,
+	})
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	for {
+		if ctx.Err() != nil {
+			return nil
+		}
+
+		err := p.runSession(ctx)
+		if ctx.Err() != nil {
+			return nil
+		}
+		if err != nil {
+			p.logger.ErrorContext(ctx, "Failed to connect to cluster, retrying.",
+				"error", err,
+				"backoff", retry.Duration(),
+			)
+		} else {
+			p.logger.WarnContext(ctx, "Edge session ended, reconnecting.")
+			retry.Reset()
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-retry.After():
+			retry.Inc()
+		}
+	}
+}
+
+func (p *Process) newResolver(ctx context.Context) (reversetunnelclient.Resolver, error) {
+	return reversetunnelclient.CachingResolver(
+		ctx,
+		reversetunnelclient.WebClientResolver(&webclient.Config{
+			Context:   ctx,
+			ProxyAddr: p.cfg.Teleport.ProxyServer,
+			Insecure:  p.cfg.Teleport.Insecure || lib.IsInsecureDevMode(),
+		}),
+		p.clock,
+	)
+}
+
+func (p *Process) runSession(ctx context.Context) error {
+	resolver, err := p.newResolver(ctx)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	p.resolver = resolver
+
 	conn, err := p.connect(ctx)
 	if err != nil {
 		return trace.Wrap(err)
 	}
 	defer conn.Close()
 
-	inventoryHandle, err := p.startInventory(ctx, conn)
+	sessionCtx, sessionCancel := context.WithCancel(ctx)
+	defer sessionCancel()
+
+	go p.watchNetwork(sessionCtx, sessionCancel)
+	go p.watchHealth(sessionCtx, sessionCancel, conn)
+
+	inventoryHandle, err := p.startInventory(sessionCtx, conn)
 	if err != nil {
 		return trace.Wrap(err)
 	}
 	defer inventoryHandle.Close()
 
-	if err := p.runNode(ctx, conn, inventoryHandle); err != nil {
-		return trace.Wrap(err)
+	return trace.Wrap(p.runNode(sessionCtx, conn, inventoryHandle))
+}
+
+func (p *Process) watchNetwork(ctx context.Context, reconnect context.CancelFunc) {
+	newNetworkWatcher(p.logger, p.clock).run(ctx, func(from, to networkFingerprint) {
+		p.logger.WarnContext(ctx, "Local network path changed, reconnecting reverse tunnel.",
+			"from", from.String(),
+			"to", to.String(),
+		)
+		reconnect()
+	})
+}
+
+func (p *Process) watchHealth(ctx context.Context, reconnect context.CancelFunc, conn *Connector) {
+	ticker := p.clock.NewTicker(healthPingInterval)
+	defer ticker.Stop()
+
+	failures := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.Chan():
+		}
+
+		pingCtx, cancel := context.WithTimeout(ctx, healthPingTimeout)
+		_, err := conn.Client.Ping(pingCtx)
+		cancel()
+		if ctx.Err() != nil {
+			return
+		}
+		if err == nil {
+			failures = 0
+			continue
+		}
+		failures++
+		p.logger.WarnContext(ctx, "Auth health ping failed.", "error", err, "failures", failures)
+		if failures >= healthPingFails {
+			p.logger.WarnContext(ctx, "Auth health ping failed repeatedly, reconnecting reverse tunnel.")
+			reconnect()
+			return
+		}
 	}
-	return nil
 }
 
 func (p *Process) startInventory(ctx context.Context, conn *Connector) (inventory.DownstreamHandle, error) {

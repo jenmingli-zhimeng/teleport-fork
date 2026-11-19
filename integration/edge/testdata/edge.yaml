@@ -14,6 +14,10 @@ ssh_service:
   enabled: yes
   labels:
     env: itest
+  commands:
+    - name: os
+      command: ['/bin/uname', '-s']
+      period: 1s
 edge_service:
   memory_limit: 128MiB
   max_connections: 8

@@ -931,11 +931,7 @@ func (c *Controller) handleSSHServerHB(handle *upstreamHandle, sshServer *types.
 		return trace.AccessDenied("immutable labels changed after registration")
 	}
 
-	// if a peer address is available in the context, use it to override zero-value addresses from
-	// the server heartbeat.
-	if handle.PeerAddr() != "" {
-		sshServer.SetAddr(utils.ReplaceLocalhost(sshServer.GetAddr(), handle.PeerAddr()))
-	}
+	applyObservedPeerAddr(sshServer, handle.PeerAddr())
 
 	sshServer.SetExpiry(time.Now().Add(c.serverTTL).UTC())
 
@@ -983,6 +979,37 @@ func (c *Controller) handleSSHServerHB(handle *upstreamHandle, sshServer *types.
 	}
 	handle.sshServer.resource = sshServer
 	return nil
+}
+
+// labelTunnelIP is the static label written when the cluster observes a
+// reverse-tunnel agent's public source address (the NAT IP as seen by Proxy).
+const labelTunnelIP = "tunnel_ip"
+
+// applyObservedPeerAddr records the agent's public source address on an SSH
+// heartbeat. Reverse-tunnel agents advertise an empty listen addr; the cluster
+// fills it from the tunnel TCP peer (preferred) or the inventory-stream peer
+// so the Web UI can show the NAT public IP without an agent-side IP lookup.
+func applyObservedPeerAddr(sshServer *types.ServerV2, icsPeer string) {
+	peer := icsPeer
+	if tunnelPeer := utils.TunnelPeerAddr(sshServer.GetName()); utils.PublicHost(tunnelPeer) != "" {
+		peer = tunnelPeer
+	}
+	host := utils.PublicHost(peer)
+	if host != "" {
+		labels := maps.Clone(sshServer.Metadata.Labels)
+		if labels == nil {
+			labels = make(map[string]string, 1)
+		}
+		labels[labelTunnelIP] = host
+		sshServer.SetStaticLabels(labels)
+	}
+	if sshServer.GetAddr() == "" {
+		sshServer.SetAddr(host)
+		return
+	}
+	if peer != "" {
+		sshServer.SetAddr(utils.ReplaceLocalhost(sshServer.GetAddr(), peer))
+	}
 }
 
 func (c *Controller) handleRelayServerHB(handle *upstreamHandle, relayServer *presencev1.RelayServer, relayDelay *delay.Delay) error {
@@ -1459,6 +1486,9 @@ func (c *Controller) keepAliveSSHServer(handle *upstreamHandle, now time.Time) e
 		return nil
 	}
 
+	// Reverse tunnels often come up after the first SSH heartbeat (empty addr).
+	// Re-apply the observed peer so later keepalives can fill tunnel_ip.
+	applyObservedPeerAddr(handle.sshServer.resource, handle.PeerAddr())
 	handle.sshServer.resource.SetExpiry(now.Add(c.serverTTL).UTC())
 	if _, err := c.auth.UpsertNode(c.closeContext, handle.sshServer.resource); err == nil {
 		if handle.sshServer.retryUpsert {
