@@ -7408,7 +7408,7 @@ func newHTTPFileSystem() (http.FileSystem, error) {
 	if err != nil {                              //nolint:staticcheck // linter fails on non-linux system as only linux implementation returns useful values.
 		return nil, trace.Wrap(err)
 	}
-	return fs, nil
+	return withWebassetsOverlay(fs), nil
 }
 
 // initPublicGRPCServer creates and registers a gRPC server that does not use client

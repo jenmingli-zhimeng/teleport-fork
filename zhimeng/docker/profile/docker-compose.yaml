@@ -1,0 +1,65 @@
+# Teleport cluster (Auth + Proxy, multiplexed on TELEPORT_WEB_PORT).
+#
+# Copy .env.example to .env and edit it before starting:
+#   cp .env.example .env
+#   docker compose --env-file .env up -d
+#
+# Do not put an HTTP reverse proxy in front of this service. Reverse tunnels
+# and SSH over TLS use ALPN on the same port as the Web UI.
+
+name: teleport-cluster
+
+services:
+  teleport:
+    image: ${TELEPORT_IMAGE:-teleport-cluster:18.10.0}
+    container_name: ${TELEPORT_CONTAINER_NAME:-teleport}
+    hostname: ${TELEPORT_NODENAME:-teleport}
+    restart: unless-stopped
+    # Host paths stay in compose interpolation (.env). Do not env_file them into
+    # the container — TELEPORT_DATA_DIR/CERT_FILE would otherwise point at ./data
+    # and ./certs inside the image instead of the bind mounts.
+    environment:
+      TELEPORT_CLUSTER_NAME: ${TELEPORT_CLUSTER_NAME}
+      TELEPORT_PUBLIC_HOST: ${TELEPORT_PUBLIC_HOST}
+      TELEPORT_PUBLIC_ADDR: ${TELEPORT_PUBLIC_ADDR:-}
+      TELEPORT_WEB_PORT: ${TELEPORT_WEB_PORT:-27443}
+      TELEPORT_WEB_LISTEN_ADDR: 0.0.0.0:${TELEPORT_WEB_PORT:-27443}
+      TELEPORT_AUTH_LISTEN_ADDR: ${TELEPORT_AUTH_LISTEN_ADDR:-127.0.0.1:3025}
+      TELEPORT_NODENAME: ${TELEPORT_NODENAME:-teleport}
+      TELEPORT_LOG_LEVEL: ${TELEPORT_LOG_LEVEL:-info}
+      TELEPORT_SESSION_RECORDING: ${TELEPORT_SESSION_RECORDING:-node-sync}
+      TELEPORT_SECOND_FACTOR: ${TELEPORT_SECOND_FACTOR:-otp}
+      TELEPORT_HTTPS_RELOAD_INTERVAL: ${TELEPORT_HTTPS_RELOAD_INTERVAL:-1h}
+      TELEPORT_SSH_ENABLED: ${TELEPORT_SSH_ENABLED:-no}
+      TELEPORT_DATA_DIR: /var/lib/teleport
+      TELEPORT_CERT_FILE: /etc/teleport/certs/fullchain.pem
+      TELEPORT_KEY_FILE: /etc/teleport/certs/privkey.pem
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${TELEPORT_WEB_PORT:-27443}:${TELEPORT_WEB_PORT:-27443}"
+    volumes:
+      - ${TELEPORT_DATA_DIR:-./data}:/var/lib/teleport
+      - ${TELEPORT_CERT_FILE:-./certs/fullchain.pem}:/etc/teleport/certs/fullchain.pem:ro
+      - ${TELEPORT_KEY_FILE:-./certs/privkey.pem}:/etc/teleport/certs/privkey.pem:ro
+      - ${TELEPORT_LOGO_LIGHT:-./logo/logo-light.svg}:/etc/teleport/web-overlay/app/logo-light.svg:ro
+      - ${TELEPORT_LOGO_DARK:-./logo/logo-dark.svg}:/etc/teleport/web-overlay/app/logo-dark.svg:ro
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    stop_signal: SIGQUIT
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-fk",
+          "--max-time",
+          "5",
+          "https://127.0.0.1:${TELEPORT_WEB_PORT:-27443}/webapi/ping",
+        ]
+      interval: 15s
+      timeout: 8s
+      retries: 10
+      start_period: 40s
