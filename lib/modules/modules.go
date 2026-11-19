@@ -41,7 +41,6 @@ import (
 	"github.com/gravitational/teleport/api/utils/keys"
 	"github.com/gravitational/teleport/api/utils/keys/hardwarekey"
 	"github.com/gravitational/teleport/entitlements"
-	"github.com/gravitational/teleport/lib/automaticupgrades"
 	"github.com/gravitational/teleport/lib/tlsca"
 )
 
@@ -416,7 +415,7 @@ func (p *defaultModules) LicenseExpiry() time.Time {
 // todo (michellescripts) remove deprecated features
 func (p *defaultModules) Features() Features {
 	p.loadDynamicValues.Do(func() {
-		p.automaticUpgrades = automaticupgrades.IsEnabled()
+		p.automaticUpgrades = automaticUpgradesEnabled()
 	})
 
 	return Features{

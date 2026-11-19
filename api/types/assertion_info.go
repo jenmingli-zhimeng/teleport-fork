@@ -1,3 +1,5 @@
+//go:build !edgeagent
+
 /*
 Copyright 2022 Gravitational, Inc.
 

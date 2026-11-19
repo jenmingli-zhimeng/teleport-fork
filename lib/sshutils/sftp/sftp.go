@@ -22,7 +22,6 @@ package sftp
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -34,7 +33,6 @@ import (
 
 	"github.com/gravitational/trace"
 	"github.com/pkg/sftp"
-	"github.com/schollz/progressbar/v3"
 
 	"github.com/gravitational/teleport"
 	tracessh "github.com/gravitational/teleport/api/observability/tracing/ssh"
@@ -545,49 +543,4 @@ func getAtime(fi os.FileInfo) time.Time {
 	}
 
 	return scp.GetAtime(fi)
-}
-
-// unboundedProgressBar is a wrapper for a progress bar that increases its max
-// value when its internal count gets too big, instead of failing.
-type unboundedProgressBar struct {
-	pb *progressbar.ProgressBar
-}
-
-func (u *unboundedProgressBar) checkMax(n int) {
-	state := u.pb.State()
-	newNum := state.CurrentNum + int64(n)
-	if newNum > state.Max {
-		u.pb.ChangeMax64(newNum)
-	}
-}
-
-func (u *unboundedProgressBar) Read(p []byte) (int, error) {
-	u.checkMax(len(p))
-	return u.pb.Read(p)
-}
-
-func (u *unboundedProgressBar) Write(p []byte) (int, error) {
-	u.checkMax(len(p))
-	return u.pb.Write(p)
-}
-
-// newProgressBar returns a new progress bar that writes to writer.
-func newProgressBar(size int64, desc string, writer io.Writer) *unboundedProgressBar {
-	// this is necessary because progressbar.DefaultBytes doesn't allow
-	// the caller to specify a writer
-	return &unboundedProgressBar{pb: progressbar.NewOptions64(
-		size,
-		progressbar.OptionSetDescription(desc),
-		progressbar.OptionSetWriter(writer),
-		progressbar.OptionShowBytes(true),
-		progressbar.OptionSetWidth(10),
-		progressbar.OptionThrottle(100*time.Millisecond),
-		progressbar.OptionShowCount(),
-		progressbar.OptionOnCompletion(func() {
-			fmt.Fprint(writer, "\n")
-		}),
-		progressbar.OptionSpinnerType(14),
-		progressbar.OptionFullWidth(),
-		progressbar.OptionSetRenderBlankState(true),
-	)}
 }

@@ -19,7 +19,6 @@ package utils
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"io"
 	"reflect"
 	"unicode"
@@ -27,7 +26,6 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/gravitational/trace"
 	jsoniter "github.com/json-iterator/go"
-	kyaml "k8s.io/apimachinery/pkg/util/yaml"
 
 	"github.com/gravitational/teleport/api/internalutils/stream"
 )
@@ -234,27 +232,4 @@ func writeYAML(w io.Writer, values interface{}) error {
 	}
 	_, err = w.Write(data)
 	return trace.Wrap(err)
-}
-
-// ReadYAML can unmarshal a stream of documents, used in tests.
-func ReadYAML(reader io.Reader) (interface{}, error) {
-	decoder := kyaml.NewYAMLOrJSONDecoder(reader, 32*1024)
-	var values []interface{}
-	for {
-		var val interface{}
-		err := decoder.Decode(&val)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				if len(values) == 0 {
-					return nil, trace.BadParameter("no resources found, empty input?")
-				}
-				if len(values) == 1 {
-					return values[0], nil
-				}
-				return values, nil
-			}
-			return nil, trace.Wrap(err)
-		}
-		values = append(values, val)
-	}
 }

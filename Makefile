@@ -419,6 +419,20 @@ ifneq ($(SESSIONHELPER_EMBED_TAG),)
 	gzip -9 -n < '$(BUILDDIR)/sessionhelper' > 'session/reexec/embed/sessionhelper_$(OS)_$(ARCH).gz'
 endif
 
+# teleport-edge is a reduced SSH Node binary for constrained Linux devices.
+# It is built with CGO disabled so it can run on musl-based OpenWrt systems.
+.PHONY: teleport-edge $(BUILDDIR)/teleport-edge
+teleport-edge: $(BUILDDIR)/teleport-edge
+$(BUILDDIR)/teleport-edge:
+	@echo "---> Building teleport-edge (CGO_ENABLED=0, tags=edgeagent $(SESSIONHELPER_EMBED_TAG))."
+ifneq ($(SESSIONHELPER_EMBED_TAG),)
+	GOTOOLCHAIN=go1.25.11 CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go -C session build -buildvcs=false -tags "edgeagent gravitational_trace.nocrypto" -o '$(abspath $(BUILDDIR)/sessionhelper)' $(BUILDFLAGS) ./cmd/sessionhelper
+	mkdir -p session/reexec/embed
+	gzip -9 -n < '$(BUILDDIR)/sessionhelper' > 'session/reexec/embed/sessionhelper_$(OS)_$(ARCH).gz'
+endif
+	GOTOOLCHAIN=go1.25.11 CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build -tags "edgeagent $(SESSIONHELPER_EMBED_TAG) $(KUSTOMIZE_NO_DYNAMIC_PLUGIN)" -o $(BUILDDIR)/teleport-edge $(BUILDFLAGS) ./tool/teleport-edge
+	@ls -lh $(BUILDDIR)/teleport-edge
+
 # NOTE: Any changes to the `tsh` build here must be copied to `build.assets/windows/build.ps1`
 # until we can use this Makefile for native Windows builds.
 .PHONY: $(BUILDDIR)/tsh

@@ -28,7 +28,6 @@ import (
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/lib/agentless"
 	"github.com/gravitational/teleport/lib/auth/authclient"
-	"github.com/gravitational/teleport/lib/proxy/peer"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/services/readonly"
 	"github.com/gravitational/teleport/lib/sshagent"
@@ -163,8 +162,6 @@ type Server interface {
 	Shutdown(context.Context) error
 	// Wait waits for server to close all outstanding operations
 	Wait(ctx context.Context)
-	// GetProxyPeerClient returns the proxy peer client
-	GetProxyPeerClient() *peer.Client
 	// TrackUserConnection tracks a user connection that should prevent
 	// the server from being terminated if active. The returned function
 	// should be called when the connection is terminated.

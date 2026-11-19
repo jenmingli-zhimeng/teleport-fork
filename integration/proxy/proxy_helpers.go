@@ -58,6 +58,7 @@ import (
 	"github.com/gravitational/teleport/lib/join/joinclient"
 	"github.com/gravitational/teleport/lib/kube/kubeconfig"
 	testingkubemock "github.com/gravitational/teleport/lib/kube/proxy/testing/kube_server"
+	"github.com/gravitational/teleport/lib/proxy/peer"
 	"github.com/gravitational/teleport/lib/reversetunnelclient"
 	"github.com/gravitational/teleport/lib/service/servicecfg"
 	"github.com/gravitational/teleport/lib/services"
@@ -584,8 +585,13 @@ func makeNodeConfig(nodeName, proxyAddr string) *servicecfg.Config {
 
 // waitForActivePeerProxyConnections waits for remote cluster to report a minimum number of active proxy peer connections
 func waitForActivePeerProxyConnections(t *testing.T, tunnel reversetunnelclient.Server, expectedCount int) { //nolint:unused // Only used by skipped test TestProxyTunnelStrategyProxyPeering
+	type proxyPeerSource interface {
+		GetProxyPeerClient() *peer.Client
+	}
+	src, ok := tunnel.(proxyPeerSource)
+	require.True(t, ok, "reverse tunnel server does not expose a proxy peer client")
 	require.Eventually(t, func() bool {
-		return tunnel.GetProxyPeerClient().GetConnectionsCount() >= expectedCount
+		return src.GetProxyPeerClient().GetConnectionsCount() >= expectedCount
 	},
 		30*time.Second,
 		time.Second,

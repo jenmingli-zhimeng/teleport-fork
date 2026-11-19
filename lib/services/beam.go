@@ -25,7 +25,6 @@ import (
 	"strings"
 
 	"github.com/gravitational/trace"
-	"k8s.io/apimachinery/pkg/util/validation"
 
 	beamsv1 "github.com/gravitational/teleport/api/gen/proto/go/teleport/beams/v1"
 	"github.com/gravitational/teleport/api/types"
@@ -122,8 +121,8 @@ func ValidateBeam(b *beamsv1.Beam) error {
 
 			// Note: wildcard like "*.example.com." are explicitly not supported
 			// because we don't yet have a way to proxy them via VNet.
-			if errs := validation.IsDNS1123Subdomain(trimmedDomain); len(errs) > 0 {
-				return trace.BadParameter("spec.allowed_domains[%d]: %q is invalid: %s", i, domain, errs)
+			if !isDNS1123Subdomain(trimmedDomain) {
+				return trace.BadParameter("spec.allowed_domains[%d]: %q is invalid", i, domain)
 			}
 		}
 	case beamsv1.EgressMode_EGRESS_MODE_UNRESTRICTED:
@@ -157,6 +156,29 @@ func ValidateBeamAlias(alias string) error {
 		return nil
 	}
 	return trace.BadParameter("beam alias must be a hyphen-separated pair of two lowercase words")
+}
+
+// isDNS1123Subdomain matches k8s.io/apimachinery/pkg/util/validation.IsDNS1123Subdomain
+// without importing apimachinery: lowercase labels of [a-z0-9]([-a-z0-9]*[a-z0-9])?
+func isDNS1123Subdomain(value string) bool {
+	if value == "" || len(value) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(value, ".") {
+		if label == "" || len(label) > 63 {
+			return false
+		}
+		for i := 0; i < len(label); i++ {
+			c := label[i]
+			switch {
+			case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+			case c == '-' && i > 0 && i < len(label)-1:
+			default:
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // MakeBeamFilterFunc creates a filter function for beams based on the provided

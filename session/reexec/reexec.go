@@ -31,7 +31,6 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,7 +38,6 @@ import (
 	"time"
 
 	"github.com/gravitational/trace"
-	ocselinux "github.com/opencontainers/selinux/go-selinux"
 	"golang.org/x/sys/unix"
 
 	apiconstants "github.com/gravitational/teleport/api/constants"
@@ -54,7 +52,6 @@ import (
 	"github.com/gravitational/teleport/session/reexec/internal/logutils"
 	"github.com/gravitational/teleport/session/reexec/reexecconstants"
 	"github.com/gravitational/teleport/session/reexec/reexecsftp"
-	"github.com/gravitational/teleport/session/selinux"
 	"github.com/gravitational/teleport/session/shell"
 	"github.com/gravitational/teleport/session/uacc"
 	"github.com/gravitational/teleport/session/uds"
@@ -468,21 +465,8 @@ func RunCommand() (code int, err error) {
 	// enabled so the child process will be running with the correct SELinux
 	// user, role and domain.
 	if c.SetSELinuxContext {
-		seContext, err := selinux.UserContext(c.Login)
-		if err != nil {
-			return reexecconstants.RemoteCommandFailure, trace.Wrap(err, "failed to get SELinux context of login user")
-		}
-
-		// SetExecLabel changes the SELinux exec context for the
-		// calling thread only, so we need to ensure that is the
-		// thread that will create the child. We don't ever unlock
-		// the thread as we're exiting after the child exits, and
-		// we want to avoid another goroutine getting denied due to
-		// running on this thread with a different (likely much more
-		// restrictive)SELinux context.
-		runtime.LockOSThread()
-		if err := ocselinux.SetExecLabel(seContext); err != nil {
-			return reexecconstants.RemoteCommandFailure, trace.Wrap(err, "failed to set SELinux context")
+		if err := setChildSELinuxContext(c.Login); err != nil {
+			return reexecconstants.RemoteCommandFailure, trace.Wrap(err)
 		}
 	}
 
@@ -1471,10 +1455,16 @@ func initLogger(name string, logWriter *os.File, cfg ExecLogConfig) {
 		return
 	}
 
+	// *slog.LevelVar stored in an interface is a typed nil and panics on Level().
+	var level slog.Leveler
+	if cfg.Level != nil {
+		level = cfg.Level
+	}
+
 	switch cfg.Format {
 	case "text", "":
 		logger := slog.New(logutils.NewSlogTextHandler(logWriter, logutils.SlogTextHandlerConfig{
-			Level:            cfg.Level,
+			Level:            level,
 			EnableColors:     cfg.EnableColors,
 			ConfiguredFields: fields,
 			Padding:          cfg.Padding,
@@ -1482,7 +1472,7 @@ func initLogger(name string, logWriter *os.File, cfg ExecLogConfig) {
 		slog.SetDefault(logger.With(logconstants.ComponentKey, name))
 	case "json":
 		logger := slog.New(logutils.NewSlogJSONHandler(logWriter, logutils.SlogJSONHandlerConfig{
-			Level:            cfg.Level,
+			Level:            level,
 			ConfiguredFields: fields,
 		}))
 		slog.SetDefault(logger.With(logconstants.ComponentKey, name))

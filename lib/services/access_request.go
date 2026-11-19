@@ -31,7 +31,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/gravitational/trace"
 	"github.com/jonboulle/clockwork"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/gravitational/teleport"
 	"github.com/gravitational/teleport/api/accessrequest"
@@ -2680,16 +2679,16 @@ func getKubeResourcesFromResourceIDs(resourceIDs []types.ResourceID, clusterName
 			} else {
 				kind = strings.TrimPrefix(kind, types.AccessRequestPrefixKindKubeClusterWide)
 			}
-			gk := schema.ParseGroupKind(kind)
-			if gk.Group == "" {
-				gk.Group = types.KubernetesResourcesV7KindGroups[resourceID.Kind]
+			gkKind, gkGroup := parseGroupKind(kind)
+			if gkGroup == "" {
+				gkGroup = types.KubernetesResourcesV7KindGroups[resourceID.Kind]
 			}
 			switch {
 			case isClusterWide:
 				kubernetesResources = append(kubernetesResources, types.KubernetesResource{
-					Kind:     gk.Kind,
+					Kind:     gkKind,
 					Name:     resourceID.SubResourceName,
-					APIGroup: gk.Group,
+					APIGroup: gkGroup,
 				})
 			default:
 				splits := strings.Split(resourceID.SubResourceName, "/")
@@ -2697,10 +2696,10 @@ func getKubeResourcesFromResourceIDs(resourceIDs []types.ResourceID, clusterName
 					return nil, trace.BadParameter("subresource name %q does not follow <namespace>/<name> format", resourceID.SubResourceName)
 				}
 				kubernetesResources = append(kubernetesResources, types.KubernetesResource{
-					Kind:      gk.Kind,
+					Kind:      gkKind,
 					Namespace: splits[0],
 					Name:      splits[1],
-					APIGroup:  gk.Group,
+					APIGroup:  gkGroup,
 				})
 			}
 		}

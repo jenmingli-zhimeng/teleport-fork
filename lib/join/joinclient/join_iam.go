@@ -1,3 +1,5 @@
+//go:build !edgeagent
+
 // Teleport
 // Copyright (C) 2025 Gravitational, Inc.
 //

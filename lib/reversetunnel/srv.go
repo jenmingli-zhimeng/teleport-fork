@@ -1,3 +1,5 @@
+//go:build !edgeagent
+
 /*
  * Teleport
  * Copyright (C) 2023  Gravitational, Inc.
@@ -65,14 +67,6 @@ var (
 		prometheus.GaugeOpts{
 			Name: teleport.MetricRemoteClusters,
 			Help: "Number of inbound connections from remote clusters",
-		},
-		[]string{"cluster"},
-	)
-
-	trustedClustersStats = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: teleport.MetricTrustedClusters,
-			Help: "Number of outbound connections to remote clusters",
 		},
 		[]string{"cluster"},
 	)
@@ -1159,7 +1153,9 @@ func (s *server) Cluster(_ context.Context, name string) (reversetunnelclient.Cl
 	return nil, trace.NotFound("cluster %q is not found", name)
 }
 
-// GetProxyPeerClient returns the proxy peer client
+// GetProxyPeerClient returns the proxy peer client. This is on the concrete
+// server, not reversetunnelclient.Server, so agent builds do not import
+// lib/proxy/peer (quic-go).
 func (s *server) GetProxyPeerClient() *peer.Client {
 	return s.PeerClient
 }
@@ -1421,9 +1417,8 @@ func getRemoteAuthVersion(ctx context.Context, sconn ssh.Conn) (string, error) {
 }
 
 const (
-	extHost        = "host@teleport"
-	extAuthority   = "auth@teleport"
-	extCertRole    = "role"
-	extScope       = "scope@goteleport.com"
-	versionRequest = "x-teleport-version"
+	extHost      = "host@teleport"
+	extAuthority = "auth@teleport"
+	extCertRole  = "role"
+	extScope     = "scope@goteleport.com"
 )

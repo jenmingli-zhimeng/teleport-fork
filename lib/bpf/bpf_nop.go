@@ -1,4 +1,4 @@
-//go:build !bpf || 386
+//go:build (!bpf || 386) && !edgeagent
 
 /*
  * Teleport

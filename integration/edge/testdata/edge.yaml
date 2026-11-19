@@ -1,0 +1,19 @@
+version: v3
+teleport:
+  nodename: edge-node
+  data_dir: /tmp/teleport-edge-itest/node
+  proxy_server: 127.0.0.1:3080
+  join_params:
+    token_name: TOKEN
+    method: token
+  insecure: yes
+  log:
+    output: stderr
+    severity: info
+ssh_service:
+  enabled: yes
+  labels:
+    env: itest
+edge_service:
+  memory_limit: 128MiB
+  max_connections: 8

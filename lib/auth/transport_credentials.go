@@ -30,7 +30,6 @@ import (
 	"google.golang.org/grpc/credentials"
 
 	"github.com/gravitational/teleport/api/types"
-	apievents "github.com/gravitational/teleport/api/types/events"
 	"github.com/gravitational/teleport/lib/authz"
 )
 
@@ -41,18 +40,7 @@ type UserGetter interface {
 
 // ConnectionIdentity contains the identifying properties of a
 // client connection required to enforce connection limits.
-type ConnectionIdentity struct {
-	// Username is the name of the user
-	Username string
-	// MaxConnections the upper limit to number of open connections for a user
-	MaxConnections int64
-	// LocalAddr is the local address for the connection
-	LocalAddr string
-	// RemoteAddr is the remote address for the connection
-	RemoteAddr string
-	// UserMetadata contains metadata for a user
-	UserMetadata apievents.UserMetadata
-}
+type ConnectionIdentity = authz.ConnectionIdentity
 
 // ConnectionEnforcer limits incoming connections based on
 // max connection settings.

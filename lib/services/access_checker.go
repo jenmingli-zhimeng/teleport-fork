@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"github.com/gravitational/trace"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/gravitational/teleport/api/constants"
 	decisionpb "github.com/gravitational/teleport/api/gen/proto/go/teleport/decision/v1alpha1"
@@ -740,15 +739,15 @@ func (a *accessChecker) GetKubeResources(cluster types.KubeCluster) (allowed, de
 				name = types.Wildcard
 			}
 
-			gk := schema.ParseGroupKind(kind)
-			if gk.Group == "" {
-				gk.Group = types.KubernetesResourcesV7KindGroups[r.Kind]
+			gkKind, gkGroup := parseGroupKind(kind)
+			if gkGroup == "" {
+				gkGroup = types.KubernetesResourcesV7KindGroups[r.Kind]
 			}
 			r := types.KubernetesResource{
-				Kind:      gk.Kind,
+				Kind:      gkKind,
 				Namespace: namespace,
 				Name:      name,
-				APIGroup:  gk.Group,
+				APIGroup:  gkGroup,
 			}
 			// matchKubernetesResource checks if the Kubernetes Resource matches the tuple
 			// (kind, namespace, kame) from the allowed/denied list and does not match the resource

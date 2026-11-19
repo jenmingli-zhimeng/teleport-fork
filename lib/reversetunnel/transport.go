@@ -1,3 +1,5 @@
+//go:build !edgeagent
+
 /*
  * Teleport
  * Copyright (C) 2023  Gravitational, Inc.
@@ -20,12 +22,10 @@ package reversetunnel
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
-	"net/netip"
 	"time"
 
 	"github.com/gravitational/trace"
@@ -42,21 +42,6 @@ import (
 	"github.com/gravitational/teleport/lib/reversetunnelclient"
 	"github.com/gravitational/teleport/lib/utils"
 )
-
-// parseDialReq parses the dial request. Is backward compatible with legacy
-// payload.
-func parseDialReq(payload []byte) *sshutils.DialReq {
-	var req sshutils.DialReq
-	err := json.Unmarshal(payload, &req)
-	if err != nil {
-		// For backward compatibility, if the request is not a *DialReq, it is just
-		// a raw string with the target host as the payload.
-		return &sshutils.DialReq{
-			Address: string(payload),
-		}
-	}
-	return &req
-}
 
 // transport is used to build a connection to the target host.
 type transport struct {
@@ -491,15 +476,4 @@ func (p *transport) directDial(addr string) (net.Conn, error) {
 	}
 
 	return conn, nil
-}
-
-// getTCPAddr converts net.Addr to *net.TCPAddr.
-//
-// SSH package requires net.TCPAddr for source-address check.
-func getTCPAddr(addr net.Addr) *net.TCPAddr {
-	ap, err := netip.ParseAddrPort(addr.String())
-	if err != nil {
-		return nil
-	}
-	return net.TCPAddrFromAddrPort(ap)
 }

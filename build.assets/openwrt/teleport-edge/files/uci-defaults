@@ -1,0 +1,5 @@
+#!/bin/sh
+# Create data directory on first install. Enable the service after the
+# operator fills in proxy and token.
+mkdir -p /var/lib/teleport
+exit 0

@@ -1,0 +1,56 @@
+name: teleport-edge
+on:
+  push:
+    branches:
+      - edge/v18
+      - 'edge/**'
+  pull_request:
+    paths:
+      - 'tool/teleport-edge/**'
+      - 'lib/edgeagent/**'
+      - 'lib/srv/**'
+      - 'lib/join/joinclient/**'
+      - 'lib/reversetunnel/**'
+      - 'lib/reversetunnelclient/**'
+      - 'lib/services/**'
+      - 'lib/inventory/**'
+      - 'lib/events/membuffer*.go'
+      - 'lib/events/fips*.go'
+      - 'lib/modules/**'
+      - 'lib/labels/**'
+      - 'lib/utils/aws/**'
+      - 'lib/bpf/**'
+      - 'session/**'
+      - 'build.assets/edge/**'
+      - 'build.assets/openwrt/**'
+      - 'integration/edge/**'
+      - '.github/workflows/edge-agent.yml'
+      - 'Makefile'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Unit tests
+        run: go test ./lib/edgeagent
+      - name: Dependency blacklist
+        run: go test -tags 'edgeagent kustomize_disable_go_plugin_support' ./tool/teleport-edge
+      - name: Build linux/amd64
+        run: make teleport-edge
+      - name: Size budget
+        run: bash build.assets/edge/size-budget.sh
+      - name: Build linux/arm64
+        env:
+          ARCH: arm64
+        run: |
+          make teleport-edge
+          mkdir -p build
+          cp build/teleport-edge build/teleport-edge-arm64
+      - name: Upstream watch list exists
+        run: test -x build.assets/edge/upstream-watch.sh
+      - name: Integration harness exists
+        run: test -x integration/edge/run.sh

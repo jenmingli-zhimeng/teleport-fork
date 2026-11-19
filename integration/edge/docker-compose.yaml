@@ -1,0 +1,18 @@
+services:
+  auth:
+    image: debian:bookworm-slim
+    network_mode: host
+    volumes:
+      - ../../build/teleport:/usr/local/bin/teleport:ro
+      - ../../build/tctl:/usr/local/bin/tctl:ro
+      - ./testdata/auth.yaml:/etc/teleport.yaml:ro
+    command: ["teleport", "start", "--config=/etc/teleport.yaml", "--insecure"]
+  edge:
+    image: debian:bookworm-slim
+    network_mode: host
+    depends_on:
+      - auth
+    volumes:
+      - ../../build/teleport-edge:/usr/local/bin/teleport-edge:ro
+      - ./testdata/edge.yaml:/etc/teleport.yaml:ro
+    command: ["teleport-edge", "start", "--config=/etc/teleport.yaml", "--insecure"]

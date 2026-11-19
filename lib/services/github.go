@@ -1,3 +1,5 @@
+//go:build !edgeagent
+
 /*
  * Teleport
  * Copyright (C) 2023  Gravitational, Inc.
@@ -29,10 +31,6 @@ import (
 	"github.com/gravitational/teleport/lib/modules"
 	"github.com/gravitational/teleport/lib/utils"
 )
-
-// ErrRequiresEnterprise indicates that a feature requires
-// Teleport Enterprise.
-var ErrRequiresEnterprise = &trace.AccessDeniedError{Message: "this feature requires Teleport Enterprise"}
 
 // githubConnectorMutex is a mutex for the GitHub auth connector
 // registration functions.

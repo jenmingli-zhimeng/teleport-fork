@@ -1,0 +1,24 @@
+version: v3
+teleport:
+  nodename: edge-auth
+  data_dir: /tmp/teleport-edge-itest/auth
+  log:
+    output: stderr
+    severity: info
+auth_service:
+  enabled: yes
+  listen_addr: 127.0.0.1:3025
+  cluster_name: edge-itest
+  session_recording: node-sync
+  proxy_listener_mode: multiplex
+  authentication:
+    type: local
+    # Allowed only with TELEPORT_ALLOW_NO_SECOND_FACTOR=true (see run.sh).
+    second_factor: off
+proxy_service:
+  enabled: yes
+  web_listen_addr: 127.0.0.1:3080
+  tunnel_listen_addr: 127.0.0.1:3024
+  public_addr: 127.0.0.1:3080
+ssh_service:
+  enabled: no

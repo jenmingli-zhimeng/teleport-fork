@@ -40,7 +40,6 @@ import (
 	"unicode"
 
 	"github.com/gravitational/trace"
-	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/gravitational/teleport"
 	"github.com/gravitational/teleport/api/constants"
@@ -336,7 +335,28 @@ func HostFQDN(hostUUID, clusterName string) string {
 // IsValidHostname checks if a string represents a valid hostname.
 func IsValidHostname(hostname string) bool {
 	for _, label := range strings.Split(hostname, ".") {
-		if len(validation.IsDNS1035Label(label)) > 0 {
+		if !isDNS1035Label(label) {
+			return false
+		}
+	}
+	return true
+}
+
+// isDNS1035Label matches k8s.io/apimachinery/pkg/util/validation.IsDNS1035Label
+// without importing apimachinery: [a-z]([-a-z0-9]*[a-z0-9])? up to 63 chars.
+func isDNS1035Label(value string) bool {
+	if value == "" || len(value) > 63 {
+		return false
+	}
+	if value[0] < 'a' || value[0] > 'z' {
+		return false
+	}
+	for i := 1; i < len(value); i++ {
+		c := value[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+		case c == '-' && i < len(value)-1:
+		default:
 			return false
 		}
 	}

@@ -42,7 +42,6 @@ import (
 	"github.com/gravitational/teleport/api/utils/keys"
 	apisshutils "github.com/gravitational/teleport/api/utils/sshutils"
 	"github.com/gravitational/teleport/lib/auth/moderation"
-	"github.com/gravitational/teleport/lib/connectmycomputer"
 	"github.com/gravitational/teleport/lib/decision"
 	"github.com/gravitational/teleport/lib/events"
 	"github.com/gravitational/teleport/lib/observability/metrics"
@@ -421,7 +420,7 @@ func (h *AuthHandlers) UserKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (pp
 			//
 			// The only way this could happen is if the backend state got updated between fetching the
 			// logins from the role and actually performing the test.
-			connectMyComputerRoleName := connectmycomputer.GetRoleNameForUser(ident.Username)
+			connectMyComputerRoleName := teleport.ConnectMyComputerRoleNamePrefix + ident.Username
 
 			message = fmt.Sprintf("Principal %q is not allowed by this certificate. Ensure that the role %q includes %q in the 'login' property. ",
 				principal, connectMyComputerRoleName, principal) +
@@ -436,7 +435,7 @@ func (h *AuthHandlers) UserKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (pp
 				// types.ConnectMyComputerNodeOwnerLabel. If a role denies access to the Connect My Computer
 				// node through node_labels, the user would never be able to see that the node has joined
 				// the cluster and would not be able to get to the connection test step.
-				connectMyComputerRoleName := connectmycomputer.GetRoleNameForUser(ident.Username)
+				connectMyComputerRoleName := teleport.ConnectMyComputerRoleNamePrefix + ident.Username
 				nodeLabel := fmt.Sprintf("%s: %s", types.ConnectMyComputerNodeOwnerLabel, ident.Username)
 				message = fmt.Sprintf(
 					"You are not authorized to access this node. Ensure that you hold the role %q and that "+

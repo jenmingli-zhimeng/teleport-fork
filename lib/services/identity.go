@@ -35,7 +35,6 @@ import (
 	userspb "github.com/gravitational/teleport/api/gen/proto/go/teleport/users/v1"
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/api/utils/keys"
-	wantypes "github.com/gravitational/teleport/lib/auth/webauthntypes"
 	"github.com/gravitational/teleport/lib/backend"
 	"github.com/gravitational/teleport/lib/defaults"
 )
@@ -159,34 +158,9 @@ type Identity interface {
 	// See UpsertWebauthnLocalAuth and types.WebauthnLocalAuth.
 	GetTeleportUserByWebauthnID(ctx context.Context, webID []byte) (string, error)
 
-	// UpsertWebauthnSessionData creates or updates WebAuthn session data in
-	// storage, for the purpose of later verifying an authentication or
-	// registration challenge.
-	// Session data is expected to expire according to backend settings.
-	UpsertWebauthnSessionData(ctx context.Context, user, sessionID string, sd *wantypes.SessionData) error
-
-	// GetWebauthnSessionData retrieves a previously-stored session data by ID,
-	// if it exists and has not expired.
-	GetWebauthnSessionData(ctx context.Context, user, sessionID string) (*wantypes.SessionData, error)
-
-	// DeleteWebauthnSessionData deletes session data by ID, if it exists and has
-	// not expired.
-	DeleteWebauthnSessionData(ctx context.Context, user, sessionID string) error
-
-	// UpsertGlobalWebauthnSessionData creates or updates WebAuthn session data in
-	// storage, for the purpose of later verifying an authentication challenge.
-	// Session data is expected to expire according to backend settings.
-	// Used for passwordless challenges.
-	UpsertGlobalWebauthnSessionData(ctx context.Context, scope, id string, sd *wantypes.SessionData) error
-
-	// GetGlobalWebauthnSessionData retrieves previously-stored session data by ID,
-	// if it exists and has not expired.
-	// Used for passwordless challenges.
-	GetGlobalWebauthnSessionData(ctx context.Context, scope, id string) (*wantypes.SessionData, error)
-
-	// DeleteGlobalWebauthnSessionData deletes session data by ID, if it exists
-	// and has not expired.
-	DeleteGlobalWebauthnSessionData(ctx context.Context, scope, id string) error
+	// webauthnSessionData is session-challenge storage (go-webauthn).
+	// Empty on teleport-edge; auth still compiles the real methods.
+	webauthnSessionData
 
 	// UpsertMFADevice upserts an MFA device for the user.
 	UpsertMFADevice(ctx context.Context, user string, d *types.MFADevice) error

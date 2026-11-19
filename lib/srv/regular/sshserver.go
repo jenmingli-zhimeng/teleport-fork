@@ -60,13 +60,9 @@ import (
 	"github.com/gravitational/teleport/lib/inventory"
 	"github.com/gravitational/teleport/lib/labels"
 	"github.com/gravitational/teleport/lib/limiter"
-	"github.com/gravitational/teleport/lib/proxy"
-	"github.com/gravitational/teleport/lib/relaytunnel"
 	"github.com/gravitational/teleport/lib/reversetunnel"
 	"github.com/gravitational/teleport/lib/reversetunnelclient"
 	"github.com/gravitational/teleport/lib/scopes"
-	authorizedkeysreporter "github.com/gravitational/teleport/lib/secretsscanner/authorizedkeys"
-	"github.com/gravitational/teleport/lib/service/servicecfg"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/session"
 	"github.com/gravitational/teleport/lib/srv"
@@ -218,7 +214,7 @@ type Server struct {
 	// relayInfoGetter gets the Relay group and Relay host IDs that this
 	// Teleport instance is connected to. The returned data must be owned by the
 	// caller (i.e. it should be a copy).
-	relayInfoGetter relaytunnel.GetRelayInfoFunc
+	relayInfoGetter func() (relayGroup string, relayIDs []string)
 
 	// createHostUser configures whether a host should allow host user
 	// creation
@@ -237,8 +233,8 @@ type Server struct {
 	tracerProvider oteltrace.TracerProvider
 
 	// router used by subsystem requests to connect to nodes
-	// and clusters
-	router *proxy.Router
+	// and clusters. Typed as *proxy.Router in non-edge builds.
+	router any
 
 	// sessionController is used to restrict new sessions
 	// based on locks and cluster preferences
@@ -538,21 +534,6 @@ func SetRotationGetter(getter services.RotationGetter) ServerOption {
 	}
 }
 
-// SetProxyMode starts this server in SSH proxying mode
-func SetProxyMode(peerAddr string, clusterGetter reversetunnelclient.ClusterGetter, ap authclient.ReadProxyAccessPoint, router *proxy.Router) ServerOption {
-	return func(s *Server) error {
-		// always set proxy mode to true,
-		// because in some tests reverse tunnel is disabled,
-		// but proxy is still used without it.
-		s.proxyMode = true
-		s.proxyClusterGetter = clusterGetter
-		s.proxyAccessPoint = ap
-		s.peerAddr = peerAddr
-		s.router = router
-		return nil
-	}
-}
-
 // SetIngressReporter sets the reporter for reporting new and active connections.
 func SetIngressReporter(service string, r *ingress.Reporter) ServerOption {
 	return func(s *Server) error {
@@ -752,7 +733,7 @@ func SetConnectedProxyGetter(getter *reversetunnel.ConnectedProxyGetter) ServerO
 
 // SetRelayInfoGetter sets the function used to get the relay tunnel client info
 // to fill in the server heartbeat.
-func SetRelayInfoGetter(getter relaytunnel.GetRelayInfoFunc) ServerOption {
+func SetRelayInfoGetter(getter func() (relayGroup string, relayIDs []string)) ServerOption {
 	return func(s *Server) error {
 		s.relayInfoGetter = getter
 		return nil
@@ -842,20 +823,11 @@ func SetImmutableLabels(labels map[string]string) ServerOption {
 	}
 }
 
-// SetChildLogConfig sets the config that will be used to handle logs
+// SetChildLogConfigFrom sets the config that will be used to handle logs
 // from child processes.
-func SetChildLogConfig(cfg *servicecfg.Config) ServerOption {
+func SetChildLogConfigFrom(cfg *srv.ChildLogConfig) ServerOption {
 	return func(s *Server) error {
-		s.childLogConfig = &srv.ChildLogConfig{
-			ExecLogConfig: reexec.ExecLogConfig{
-				Level:        cfg.LoggerLevel,
-				Format:       strings.ToLower(cfg.LogConfig.Format),
-				ExtraFields:  cfg.LogConfig.ExtraFields,
-				EnableColors: cfg.LogConfig.EnableColors,
-				Padding:      cfg.LogConfig.Padding,
-			},
-			Writer: cfg.LogWriter,
-		}
+		s.childLogConfig = cfg
 		return nil
 	}
 }
@@ -1070,30 +1042,6 @@ func (s *Server) clusterGetterWithAccessChecker(ctx *srv.ServerContext) (reverse
 	return reversetunnelclient.NewClusterGetterWithRoles(s.proxyClusterGetter, clusterName.GetClusterName(), ctx.Identity.UnstableClusterAccessChecker, s.proxyAccessPoint), nil
 }
 
-// startAuthorizedKeysManager starts the authorized keys manager.
-func (s *Server) startAuthorizedKeysManager(ctx context.Context, auth authclient.ClientI) error {
-	authorizedKeysWatcher, err := authorizedkeysreporter.NewWatcher(
-		ctx,
-		authorizedkeysreporter.WatcherConfig{
-			Client: auth,
-			Logger: slog.Default(),
-			HostID: s.uuid,
-			Clock:  s.clock,
-		},
-	)
-	if errors.Is(err, authorizedkeysreporter.ErrUnsupportedPlatform) {
-		return nil
-	} else if err != nil {
-		return trace.Wrap(err)
-	}
-
-	go func() {
-		if err := authorizedKeysWatcher.Run(ctx); err != nil {
-			s.logger.WarnContext(ctx, "Failed to start authorized keys watcher", "error", err)
-		}
-	}()
-	return nil
-}
 
 // Context returns server shutdown context
 func (s *Server) Context() context.Context {

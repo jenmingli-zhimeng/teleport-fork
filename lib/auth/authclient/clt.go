@@ -69,7 +69,6 @@ import (
 	apievents "github.com/gravitational/teleport/api/types/events"
 	"github.com/gravitational/teleport/api/utils/keys/hardwarekey"
 	accessgraphv1 "github.com/gravitational/teleport/gen/proto/go/accessgraph/v1alpha"
-	wantypes "github.com/gravitational/teleport/lib/auth/webauthntypes"
 	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/events"
 	"github.com/gravitational/teleport/lib/services"
@@ -1329,7 +1328,7 @@ type AuthenticateUserRequest struct {
 	// Pass is a password used in local authentication schemes
 	Pass *PassCreds `json:"pass,omitempty"`
 	// Webauthn is a signed credential assertion, used in MFA authentication
-	Webauthn *wantypes.CredentialAssertionResponse `json:"webauthn,omitempty"`
+	Webauthn *webauthnAssertionResponse `json:"webauthn,omitempty"`
 	// OTP is a password and second factor, used for MFA authentication
 	OTP *OTPCreds `json:"otp,omitempty"`
 	// BrowserMFA is a Browser MFA message that a CLI client has sent to the proxy
@@ -1446,7 +1445,7 @@ type CLILoginResponse struct {
 	// BrowserMFAWebauthnResponse is a webauthn response for the browser MFA flow
 	// Exists in SSHLoginResponse as this is the payload used by the SSO redirector
 	// (lib/client/sso/redirector.go).
-	BrowserMFAWebauthnResponse *wantypes.CredentialAssertionResponse `json:"browser_mfa_webauthn_response,omitempty"`
+	BrowserMFAWebauthnResponse *webauthnAssertionResponse `json:"browser_mfa_webauthn_response,omitempty"`
 }
 
 // TODO(danielashare): Remove this alias once e no longer references it

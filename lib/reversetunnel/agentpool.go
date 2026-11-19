@@ -552,35 +552,7 @@ func (p *AgentPool) handleTransport(ctx context.Context, channel ssh.Channel, re
 		p.handleLocalTransport(ctx, channel, requests, conn)
 		return
 	}
-
-	t := &transport{
-		closeContext:         ctx,
-		component:            p.Component,
-		localClusterName:     p.LocalCluster,
-		kubeDialAddr:         p.KubeDialAddr,
-		authClient:           p.Client,
-		reverseTunnelServer:  p.ReverseTunnelServer,
-		server:               p.Server,
-		emitter:              p.Client,
-		sconn:                conn,
-		channel:              channel,
-		requestCh:            requests,
-		logger:               p.logger,
-		authServers:          p.LocalAuthAddresses,
-		proxySigner:          p.PROXYSigner,
-		forwardClientAddress: true,
-	}
-
-	// If the AgentPool is being used for Proxy to Proxy communication between two clusters, then
-	// we check if the reverse tunnel server is capable of tracking user connections. This allows
-	// the leaf proxy to track sessions that are initiated via the root cluster. Without providing
-	// the user tracker the leaf cluster metrics will be incorrect and graceful shutdown will not
-	// wait for user sessions to be terminated prior to proceeding with the shutdown operation.
-	if p.ReverseTunnelServer != nil {
-		t.trackUserConnection = p.ReverseTunnelServer.TrackUserConnection
-	}
-
-	t.start()
+	p.handleRemoteTransport(ctx, channel, requests, conn)
 }
 
 func (p *AgentPool) handleLocalTransport(ctx context.Context, channel ssh.Channel, reqC <-chan *ssh.Request, sconn sshutils.Conn) {

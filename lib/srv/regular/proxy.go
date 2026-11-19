@@ -16,6 +16,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+//go:build !edgeagent
+
 package regular
 
 import (
@@ -30,23 +32,12 @@ import (
 
 	"github.com/gravitational/teleport"
 	apidefaults "github.com/gravitational/teleport/api/defaults"
-	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/lib/agentless"
 	"github.com/gravitational/teleport/lib/proxy"
 	"github.com/gravitational/teleport/lib/srv"
 	"github.com/gravitational/teleport/lib/sshagent"
 	"github.com/gravitational/teleport/lib/utils"
 )
-
-// PROXYHeaderSigner allows to sign PROXY headers for securely propagating original client IP information
-type PROXYHeaderSigner interface {
-	SignPROXYHeader(source, destination net.Addr) ([]byte, error)
-}
-
-// CertAuthorityGetter allows to get cluster's host CA for verification of signed PROXY headers.
-// We define our own version to avoid circular dependencies in multiplexer package (it can't depend on 'services'),
-// where this function is used.
-type CertAuthorityGetter = func(ctx context.Context, id types.CertAuthID, loadKeys bool) (types.CertAuthority, error)
 
 // proxySubsys implements an SSH subsystem for proxying listening sockets from
 // remote hosts to a proxy client (AKA port mapping)
@@ -189,7 +180,7 @@ func newProxySubsys(ctx context.Context, serverContext *srv.ServerContext, srv *
 		ctx:                serverContext,
 		logger:             slog.With(teleport.ComponentKey, teleport.ComponentSubsystemProxy),
 		closeC:             make(chan error),
-		router:             srv.router,
+		router:             srv.router.(*proxy.Router),
 		proxySigner:        srv.proxySigner,
 		localCluster:       serverContext.ClusterName,
 	}, nil

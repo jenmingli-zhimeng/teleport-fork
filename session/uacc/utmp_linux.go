@@ -1,3 +1,5 @@
+//go:build linux && cgo && !edgeagent
+
 /*
  * Teleport
  * Copyright (C) 2023  Gravitational, Inc.

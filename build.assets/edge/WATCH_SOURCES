@@ -1,0 +1,7 @@
+# Files whose logic was copied into lib/edgeagent. After merging an
+# upstream tag, diff these paths and port any security/reliability fixes.
+lib/service/service.go
+lib/service/connect.go
+lib/service/state.go
+lib/auth/storage/storage.go
+lib/auth/register.go
