@@ -9,12 +9,12 @@
 # workflow runs need to be removed by this workflow otherwise they will persist
 # on the pull request's requirements record and not reflect the correct state
 # of the checks.
+#
+# Disabled in this fork: the dismiss bot requires secrets.reviewers, which is
+# not configured here. Do not re-enable the schedule without that secret.
 name: Dismiss Stale Workflows Runs
 on:
   workflow_dispatch:
-  schedule:
-    # Runs every 30 minutes
-    - cron: '0,30 * * * *'
 
 # Limit the permissions on the GitHub token for this workflow to the subset
 # that is required. In this case, the dismiss workflow needs to read reviews and
@@ -35,6 +35,7 @@ permissions:
 jobs:
   dismiss-stale-runs:
     name: Dismiss Stale Workflow Runs
+    if: false
     runs-on: ubuntu-latest
     steps:
       # Checkout main branch of shared-workflow repository.
